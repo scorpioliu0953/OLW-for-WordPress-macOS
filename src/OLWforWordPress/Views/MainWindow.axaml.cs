@@ -35,6 +35,7 @@ public partial class MainWindow : Window
 
     private void OnEditorTabChanged(object? sender, SelectionChangedEventArgs e)
     {
+        if (EditorTabs == null) return;
         if (EditorTabs.SelectedIndex == 0) // Preview tab
         {
             RefreshPreview();
@@ -108,7 +109,7 @@ public partial class MainWindow : Window
 
     private void OnFontSizeChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (FontSizeCombo.SelectedIndex <= 0) return;
+        if (FontSizeCombo == null || FontSizeCombo.SelectedIndex <= 0) return;
         var item = FontSizeCombo.SelectedItem as ComboBoxItem;
         var size = item?.Tag?.ToString();
         if (size != null)
@@ -121,7 +122,7 @@ public partial class MainWindow : Window
 
     private void OnTextColorChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (TextColorCombo.SelectedIndex <= 0) return;
+        if (TextColorCombo == null || TextColorCombo.SelectedIndex <= 0) return;
         var item = TextColorCombo.SelectedItem as ComboBoxItem;
         var color = item?.Tag?.ToString();
         if (color != null)
@@ -134,7 +135,7 @@ public partial class MainWindow : Window
 
     private void OnBgColorChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (BgColorCombo.SelectedIndex <= 0) return;
+        if (BgColorCombo == null || BgColorCombo.SelectedIndex <= 0) return;
         var item = BgColorCombo.SelectedItem as ComboBoxItem;
         var color = item?.Tag?.ToString();
         if (color != null)
