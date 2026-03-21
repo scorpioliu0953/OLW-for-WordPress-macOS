@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:OLWforWordPress.ViewModels"
+        x:Class="OLWforWordPress.Views.SetupWizardWindow"
+        x:DataType="vm:SetupWizardViewModel"
+        Title="OLW for WordPress - 設定"
+        Width="480" Height="420"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen">
+
+    <Border Padding="32">
+        <StackPanel Spacing="16" VerticalAlignment="Center">
+
+            <TextBlock Text="OLW for WordPress"
+                       FontSize="24" FontWeight="Bold"
+                       HorizontalAlignment="Center" />
+
+            <TextBlock Text="連線至您的 WordPress 網站"
+                       FontSize="14" Foreground="Gray"
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,8" />
+
+            <TextBlock Text="網站網址" FontWeight="SemiBold" />
+            <TextBox Text="{Binding SiteUrl}"
+                     Watermark="https://example.com"
+                     IsEnabled="{Binding !IsConnecting}" />
+
+            <TextBlock Text="使用者名稱" FontWeight="SemiBold" />
+            <TextBox Text="{Binding Username}"
+                     Watermark="admin"
+                     IsEnabled="{Binding !IsConnecting}" />
+
+            <TextBlock Text="應用程式密碼" FontWeight="SemiBold" />
+            <TextBox Text="{Binding AppPassword}"
+                     PasswordChar="●"
+                     Watermark="xxxx xxxx xxxx xxxx"
+                     IsEnabled="{Binding !IsConnecting}" />
+
+            <Button Content="連線"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Classes="accent"
+                    Click="OnConnectClick"
+                    IsEnabled="{Binding !IsConnecting}"
+                    Height="36" />
+
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="OrangeRed"
+                       TextWrapping="Wrap"
+                       HorizontalAlignment="Center"
+                       IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        </StackPanel>
+    </Border>
+</Window>

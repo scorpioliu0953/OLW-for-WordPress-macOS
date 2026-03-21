@@ -1,0 +1,135 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:OLWforWordPress.ViewModels"
+        x:Class="OLWforWordPress.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding BlogName, StringFormat='OLW for WordPress - {0}'}"
+        Width="1100" Height="750"
+        MinWidth="800" MinHeight="550"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Toolbar -->
+        <Border Grid.Row="0" Background="#f5f5f5" Padding="8" BorderBrush="#ddd" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Content="新增文章" Click="OnNewPostClick" />
+                <Button Content="發布 / 更新" Click="OnPublishClick" Classes="accent" />
+                <Separator Width="1" Background="#ccc" Margin="4,2" />
+                <Button Content="插入圖片" Click="OnInsertImageClick" />
+                <Separator Width="1" Background="#ccc" Margin="4,2" />
+                <TextBlock Text="狀態：" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding StatusOptions}"
+                          SelectedItem="{Binding SelectedStatus}"
+                          Width="120" />
+            </StackPanel>
+        </Border>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,260">
+
+            <!-- Editor Area -->
+            <Grid Column="0" RowDefinitions="Auto,Auto,*,Auto" Margin="12">
+
+                <TextBox Grid.Row="0"
+                         Text="{Binding Title}"
+                         Watermark="文章標題"
+                         FontSize="18"
+                         Margin="0,0,0,8" />
+
+                <!-- HTML Content Editor -->
+                <TextBox Grid.Row="2"
+                         Text="{Binding HtmlContent}"
+                         Watermark="在此輸入文章內容（支援 HTML）..."
+                         AcceptsReturn="True"
+                         AcceptsTab="True"
+                         TextWrapping="Wrap"
+                         FontFamily="Menlo, Consolas, monospace"
+                         FontSize="13" />
+
+                <!-- Excerpt -->
+                <Expander Grid.Row="3" Header="摘要" Margin="0,8,0,0">
+                    <TextBox Text="{Binding Excerpt}"
+                             Watermark="文章摘要（選填）"
+                             AcceptsReturn="True"
+                             Height="60"
+                             TextWrapping="Wrap" />
+                </Expander>
+            </Grid>
+
+            <!-- Right Sidebar -->
+            <Border Column="1" Background="#fafafa" BorderBrush="#ddd" BorderThickness="1,0,0,0" Padding="10">
+                <Grid RowDefinitions="Auto,*,Auto,Auto">
+
+                    <!-- Categories -->
+                    <StackPanel Grid.Row="0" Spacing="4">
+                        <TextBlock Text="分類" FontWeight="Bold" FontSize="14" />
+                        <ScrollViewer MaxHeight="160">
+                            <ItemsControl ItemsSource="{Binding Categories}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:CategoryItem">
+                                        <CheckBox Content="{Binding Name}"
+                                                  IsChecked="{Binding IsSelected}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+
+                    <!-- Recent Posts -->
+                    <StackPanel Grid.Row="1" Spacing="4" Margin="0,12,0,0">
+                        <TextBlock Text="最近文章" FontWeight="Bold" FontSize="14" />
+                        <ListBox ItemsSource="{Binding RecentPosts}"
+                                 SelectionChanged="OnRecentPostSelected"
+                                 MaxHeight="300">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:BlogPostListItem">
+                                    <StackPanel Spacing="2" Margin="2">
+                                        <TextBlock Text="{Binding DisplayTitle}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   FontSize="13" />
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding Status}"
+                                                       FontSize="11" Foreground="Gray" />
+                                            <TextBlock Text="{Binding DateDisplay}"
+                                                       FontSize="11" Foreground="Gray" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+
+                    <!-- Tags -->
+                    <StackPanel Grid.Row="2" Spacing="4" Margin="0,12,0,0">
+                        <TextBlock Text="標籤" FontWeight="Bold" FontSize="14" />
+                        <TextBox Text="{Binding TagsText}"
+                                 Watermark="以逗號分隔標籤"
+                                 TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- Delete Button -->
+                    <Button Grid.Row="3"
+                            Content="刪除文章"
+                            Click="OnDeletePostClick"
+                            IsVisible="{Binding IsEditing}"
+                            Foreground="Red"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Margin="0,12,0,0" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2" Background="#f0f0f0" Padding="8,4" BorderBrush="#ddd" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding StatusMessage}" FontSize="12" VerticalAlignment="Center" />
+                <ProgressBar Grid.Column="1"
+                             IsIndeterminate="True"
+                             IsVisible="{Binding IsBusy}"
+                             Width="100" Height="4" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -1,0 +1,18 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+.vs/
+*.DotSettings.user
+
+## macOS
+.DS_Store
+*.dmg
+
+## IDE
+.idea/
+*.swp
+*~

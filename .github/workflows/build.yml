@@ -1,0 +1,123 @@
+name: Build macOS App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - rid: osx-x64
+            arch: x64
+          - rid: osx-arm64
+            arch: arm64
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET 8
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Restore
+      run: dotnet restore src/OLWforWordPress/OLWforWordPress.csproj -r ${{ matrix.rid }}
+
+    - name: Publish
+      run: |
+        dotnet publish src/OLWforWordPress/OLWforWordPress.csproj \
+          -c Release \
+          -r ${{ matrix.rid }} \
+          --self-contained true \
+          -o publish/${{ matrix.rid }}
+
+    - name: Create .app bundle
+      run: |
+        APP_NAME="OLW for WordPress.app"
+        mkdir -p "dist/${APP_NAME}/Contents/MacOS"
+        mkdir -p "dist/${APP_NAME}/Contents/Resources"
+
+        # Copy published files
+        cp -R publish/${{ matrix.rid }}/* "dist/${APP_NAME}/Contents/MacOS/"
+
+        # Create Info.plist
+        cat > "dist/${APP_NAME}/Contents/Info.plist" << 'PLIST'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleName</key>
+            <string>OLW for WordPress</string>
+            <key>CFBundleDisplayName</key>
+            <string>OLW for WordPress</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.olwforwordpress.app</string>
+            <key>CFBundleVersion</key>
+            <string>1.0.0</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>CFBundleExecutable</key>
+            <string>OLWforWordPress</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+        </dict>
+        </plist>
+        PLIST
+
+        # Make executable
+        chmod +x "dist/${APP_NAME}/Contents/MacOS/OLWforWordPress"
+
+    - name: Create DMG
+      run: |
+        hdiutil create -volname "OLW for WordPress" \
+          -srcfolder dist \
+          -ov -format UDZO \
+          "OLWforWordPress-${{ matrix.arch }}.dmg"
+
+    - name: Upload DMG artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: OLWforWordPress-${{ matrix.arch }}-dmg
+        path: "OLWforWordPress-${{ matrix.arch }}.dmg"
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download x64 DMG
+      uses: actions/download-artifact@v4
+      with:
+        name: OLWforWordPress-x64-dmg
+
+    - name: Download arm64 DMG
+      uses: actions/download-artifact@v4
+      with:
+        name: OLWforWordPress-arm64-dmg
+
+    - name: Create or update release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v1.0.0
+        name: "OLW for WordPress macOS v1.0.0"
+        body: |
+          ## OLW for WordPress macOS 版
+
+          - **OLWforWordPress-x64.dmg** - Intel Mac (x86_64)
+          - **OLWforWordPress-arm64.dmg** - Apple Silicon Mac (M1/M2/M3/M4)
+        files: |
+          OLWforWordPress-x64.dmg
+          OLWforWordPress-arm64.dmg
