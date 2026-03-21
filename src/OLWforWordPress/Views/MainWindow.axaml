@@ -16,8 +16,6 @@
                 <Button Content="新增文章" Click="OnNewPostClick" />
                 <Button Content="發布 / 更新" Click="OnPublishClick" Classes="accent" />
                 <Separator Width="1" Background="#ccc" Margin="4,2" />
-                <Button Content="插入圖片" Click="OnInsertImageClick" />
-                <Separator Width="1" Background="#ccc" Margin="4,2" />
                 <TextBlock Text="狀態：" VerticalAlignment="Center" />
                 <ComboBox ItemsSource="{Binding StatusOptions}"
                           SelectedItem="{Binding SelectedStatus}"
@@ -37,15 +35,66 @@
                          FontSize="18"
                          Margin="0,0,0,8" />
 
+                <!-- Formatting Toolbar -->
+                <Border Grid.Row="1" Background="#fafafa" Padding="4,3" CornerRadius="4"
+                        BorderBrush="#e0e0e0" BorderThickness="1" Margin="0,0,0,6">
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Content="B" FontWeight="Bold" Click="OnBoldClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="粗體 &lt;strong&gt;" />
+                        <Button Content="I" FontStyle="Italic" Click="OnItalicClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="斜體 &lt;em&gt;" />
+                        <Button Content="U" Click="OnUnderlineClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="底線 &lt;u&gt;" />
+                        <Button Content="S" Click="OnStrikeClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="刪除線 &lt;s&gt;" />
+
+                        <Separator Width="1" Background="#ccc" Margin="6,4" />
+
+                        <Button Content="H2" Click="OnH2Click"
+                                Width="32" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="標題二" />
+                        <Button Content="H3" Click="OnH3Click"
+                                Width="32" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="標題三" />
+                        <Button Content="❝" Click="OnBlockquoteClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="引用 &lt;blockquote&gt;" />
+
+                        <Separator Width="1" Background="#ccc" Margin="6,4" />
+
+                        <Button Content="🔗" Click="OnLinkClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="插入連結" />
+                        <Button Content="🖼" Click="OnInsertImageClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="插入圖片（可多選）" />
+                        <Button Content="—" Click="OnHrClick"
+                                Width="30" Height="28" Padding="0" HorizontalContentAlignment="Center"
+                                ToolTip.Tip="水平線 &lt;hr&gt;" />
+
+                        <Separator Width="1" Background="#ccc" Margin="6,4" />
+
+                        <Button Content="Read More" Click="OnReadMoreClick"
+                                Height="28" Padding="8,0"
+                                ToolTip.Tip="插入繼續閱讀標記 &lt;!--more--&gt;" />
+                    </WrapPanel>
+                </Border>
+
                 <!-- HTML Content Editor -->
                 <TextBox Grid.Row="2"
+                         x:Name="ContentEditor"
                          Text="{Binding HtmlContent}"
-                         Watermark="在此輸入文章內容（支援 HTML）..."
+                         Watermark="在此輸入文章內容（支援 HTML，可拖曳圖片至此）..."
                          AcceptsReturn="True"
                          AcceptsTab="True"
                          TextWrapping="Wrap"
                          FontFamily="Menlo, Consolas, monospace"
-                         FontSize="13" />
+                         FontSize="13"
+                         DragDrop.AllowDrop="True" />
 
                 <!-- Excerpt -->
                 <Expander Grid.Row="3" Header="摘要" Margin="0,8,0,0">
