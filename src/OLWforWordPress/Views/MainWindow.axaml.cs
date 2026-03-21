@@ -17,7 +17,7 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        // Drag & drop on the wrapper Border (not TextBox - TextBox eats drag events on macOS)
+        // Drag & drop on wrapper Border with Tunnel to intercept before TextBox
         EditorDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
         EditorDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
 
@@ -73,7 +73,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── Image Insert (multi-select) ──
+    // ── Image Insert (multi-select, read via stream) ──
 
     private async void OnInsertImageClick(object? sender, RoutedEventArgs e)
     {
@@ -93,10 +93,10 @@ public partial class MainWindow : Window
         });
 
         if (files.Count == 0) return;
-        await UploadAndInsertImages(vm, files.Select(f => f.Path.LocalPath).ToList());
+        await UploadStorageFiles(vm, files.ToList());
     }
 
-    // ── Drag & Drop (on wrapper Border, tunneling to catch before TextBox) ──
+    // ── Drag & Drop ──
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
@@ -115,9 +115,7 @@ public partial class MainWindow : Window
     {
         if (DataContext is not MainWindowViewModel vm) return;
 
-        // Try getting files from data
         var storageItems = e.Data.GetFiles()?.ToList();
-
         if (storageItems == null || storageItems.Count == 0) return;
 
         e.Handled = true;
@@ -125,16 +123,58 @@ public partial class MainWindow : Window
         var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
 
-        var imagePaths = new List<string>();
+        // Filter to image files only
+        var imageFiles = new List<IStorageItem>();
         foreach (var item in storageItems)
         {
-            var path = item.Path.LocalPath;
-            if (!string.IsNullOrEmpty(path) && imageExtensions.Contains(Path.GetExtension(path)))
-                imagePaths.Add(path);
+            var name = item.Name ?? "";
+            if (imageExtensions.Contains(Path.GetExtension(name)))
+                imageFiles.Add(item);
         }
 
-        if (imagePaths.Count == 0) return;
-        await UploadAndInsertImages(vm, imagePaths);
+        if (imageFiles.Count == 0) return;
+
+        // Read files via stream (works on macOS sandbox)
+        vm.IsBusy = true;
+        var total = imageFiles.Count;
+        var uploaded = 0;
+        var imgTags = new List<string>();
+
+        foreach (var item in imageFiles)
+        {
+            vm.StatusMessage = $"上傳圖片中... ({uploaded + 1}/{total})";
+            try
+            {
+                // Try to get as IStorageFile to open stream
+                if (item is IStorageFile storageFile)
+                {
+                    await using var stream = await storageFile.OpenReadAsync();
+                    using var ms = new MemoryStream();
+                    await stream.CopyToAsync(ms);
+                    var bytes = ms.ToArray();
+                    var fileName = storageFile.Name;
+
+                    var url = await vm.UploadImageAsync(bytes, fileName);
+                    if (url != null)
+                    {
+                        imgTags.Add($"<img src=\"{url}\" alt=\"{Path.GetFileNameWithoutExtension(fileName)}\" />");
+                        uploaded++;
+                    }
+                }
+            }
+            catch
+            {
+                // Skip failed files
+            }
+        }
+
+        if (imgTags.Count > 0)
+            InsertAtCursor("\n" + string.Join("\n\n", imgTags) + "\n");
+
+        vm.IsBusy = false;
+        vm.StatusMessage = uploaded == total
+            ? $"已上傳 {uploaded} 張圖片"
+            : $"已上傳 {uploaded}/{total} 張圖片";
     }
 
     // ── Sidebar ──
@@ -160,21 +200,34 @@ public partial class MainWindow : Window
 
     private int GetSelectionLength() => ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
 
-    private async Task UploadAndInsertImages(MainWindowViewModel vm, List<string> imagePaths)
+    private async Task UploadStorageFiles(MainWindowViewModel vm, List<IStorageFile> files)
     {
         vm.IsBusy = true;
-        var total = imagePaths.Count;
+        var total = files.Count;
         var uploaded = 0;
         var imgTags = new List<string>();
 
-        foreach (var path in imagePaths)
+        foreach (var file in files)
         {
             vm.StatusMessage = $"上傳圖片中... ({uploaded + 1}/{total})";
-            var url = await vm.UploadImageAsync(path);
-            if (url != null)
+            try
             {
-                imgTags.Add($"<img src=\"{url}\" alt=\"{Path.GetFileNameWithoutExtension(path)}\" />");
-                uploaded++;
+                await using var stream = await file.OpenReadAsync();
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+                var fileName = file.Name;
+
+                var url = await vm.UploadImageAsync(bytes, fileName);
+                if (url != null)
+                {
+                    imgTags.Add($"<img src=\"{url}\" alt=\"{Path.GetFileNameWithoutExtension(fileName)}\" />");
+                    uploaded++;
+                }
+            }
+            catch
+            {
+                // Skip failed files
             }
         }
 

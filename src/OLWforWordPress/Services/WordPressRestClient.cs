@@ -178,6 +178,11 @@ public class WordPressRestClient : IDisposable
     {
         var fileName = Path.GetFileName(filePath);
         var fileBytes = await File.ReadAllBytesAsync(filePath);
+        return await UploadMediaAsync(fileBytes, fileName);
+    }
+
+    public async Task<MediaItem?> UploadMediaAsync(byte[] fileBytes, string fileName)
+    {
         var mimeType = GetMimeType(fileName);
 
         using var content = new ByteArrayContent(fileBytes);

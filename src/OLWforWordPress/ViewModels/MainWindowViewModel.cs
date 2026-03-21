@@ -184,14 +184,30 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         try
         {
-            StatusMessage = "Uploading image...";
+            StatusMessage = "上傳圖片中...";
             var media = await _client.UploadMediaAsync(filePath);
-            StatusMessage = media != null ? "Image uploaded." : "Upload failed.";
+            StatusMessage = media != null ? "圖片已上傳" : "上傳失敗";
             return media?.SourceUrl;
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Upload error: {ex.Message}";
+            StatusMessage = $"上傳錯誤: {ex.Message}";
+            return null;
+        }
+    }
+
+    public async Task<string?> UploadImageAsync(byte[] fileBytes, string fileName)
+    {
+        try
+        {
+            StatusMessage = "上傳圖片中...";
+            var media = await _client.UploadMediaAsync(fileBytes, fileName);
+            StatusMessage = media != null ? "圖片已上傳" : "上傳失敗";
+            return media?.SourceUrl;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"上傳錯誤: {ex.Message}";
             return null;
         }
     }
