@@ -24,6 +24,5 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
-    <AvaloniaResource Include="Views\**\*.axaml" />
   </ItemGroup>
 </Project>
