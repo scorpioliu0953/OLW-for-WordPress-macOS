@@ -183,6 +183,9 @@ public class WordPressRestClient : IDisposable
 
     public async Task<MediaItem?> UploadMediaAsync(byte[] fileBytes, string fileName)
     {
+        if (fileBytes.Length == 0)
+            throw new InvalidOperationException("File is empty");
+
         var mimeType = GetMimeType(fileName);
 
         using var content = new ByteArrayContent(fileBytes);
@@ -193,7 +196,11 @@ public class WordPressRestClient : IDisposable
         };
 
         var resp = await _http.PostAsync($"{_apiBase}/media", content);
-        if (!resp.IsSuccessStatusCode) return null;
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"HTTP {(int)resp.StatusCode}: {body}");
+        }
         return await resp.Content.ReadFromJsonAsync<MediaItem>(JsonOpts);
     }
 

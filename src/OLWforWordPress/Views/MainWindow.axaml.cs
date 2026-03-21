@@ -123,58 +123,15 @@ public partial class MainWindow : Window
         var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
 
-        // Filter to image files only
-        var imageFiles = new List<IStorageItem>();
+        var imageFiles = new List<IStorageFile>();
         foreach (var item in storageItems)
         {
-            var name = item.Name ?? "";
-            if (imageExtensions.Contains(Path.GetExtension(name)))
-                imageFiles.Add(item);
+            if (item is IStorageFile sf && imageExtensions.Contains(Path.GetExtension(sf.Name)))
+                imageFiles.Add(sf);
         }
 
         if (imageFiles.Count == 0) return;
-
-        // Read files via stream (works on macOS sandbox)
-        vm.IsBusy = true;
-        var total = imageFiles.Count;
-        var uploaded = 0;
-        var imgTags = new List<string>();
-
-        foreach (var item in imageFiles)
-        {
-            vm.StatusMessage = $"上傳圖片中... ({uploaded + 1}/{total})";
-            try
-            {
-                // Try to get as IStorageFile to open stream
-                if (item is IStorageFile storageFile)
-                {
-                    await using var stream = await storageFile.OpenReadAsync();
-                    using var ms = new MemoryStream();
-                    await stream.CopyToAsync(ms);
-                    var bytes = ms.ToArray();
-                    var fileName = storageFile.Name;
-
-                    var url = await vm.UploadImageAsync(bytes, fileName);
-                    if (url != null)
-                    {
-                        imgTags.Add($"<img src=\"{url}\" alt=\"{Path.GetFileNameWithoutExtension(fileName)}\" />");
-                        uploaded++;
-                    }
-                }
-            }
-            catch
-            {
-                // Skip failed files
-            }
-        }
-
-        if (imgTags.Count > 0)
-            InsertAtCursor("\n" + string.Join("\n\n", imgTags) + "\n");
-
-        vm.IsBusy = false;
-        vm.StatusMessage = uploaded == total
-            ? $"已上傳 {uploaded} 張圖片"
-            : $"已上傳 {uploaded}/{total} 張圖片";
+        await UploadStorageFiles(vm, imageFiles);
     }
 
     // ── Sidebar ──
@@ -206,17 +163,30 @@ public partial class MainWindow : Window
         var total = files.Count;
         var uploaded = 0;
         var imgTags = new List<string>();
+        string lastError = "";
 
         foreach (var file in files)
         {
             vm.StatusMessage = $"上傳圖片中... ({uploaded + 1}/{total})";
             try
             {
-                await using var stream = await file.OpenReadAsync();
-                using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms);
-                var bytes = ms.ToArray();
+                byte[] bytes;
                 var fileName = file.Name;
+
+                // Method 1: Try local file path first
+                var localPath = file.TryGetLocalPath();
+                if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
+                {
+                    bytes = await File.ReadAllBytesAsync(localPath);
+                }
+                else
+                {
+                    // Method 2: Read via storage stream
+                    await using var stream = await file.OpenReadAsync();
+                    using var ms = new MemoryStream();
+                    await stream.CopyToAsync(ms);
+                    bytes = ms.ToArray();
+                }
 
                 var url = await vm.UploadImageAsync(bytes, fileName);
                 if (url != null)
@@ -224,10 +194,14 @@ public partial class MainWindow : Window
                     imgTags.Add($"<img src=\"{url}\" alt=\"{Path.GetFileNameWithoutExtension(fileName)}\" />");
                     uploaded++;
                 }
+                else
+                {
+                    lastError = $"上傳 {fileName} 失敗";
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip failed files
+                lastError = $"{file.Name}: {ex.Message}";
             }
         }
 
@@ -235,9 +209,12 @@ public partial class MainWindow : Window
             InsertAtCursor("\n" + string.Join("\n\n", imgTags) + "\n");
 
         vm.IsBusy = false;
-        vm.StatusMessage = uploaded == total
-            ? $"已上傳 {uploaded} 張圖片"
-            : $"已上傳 {uploaded}/{total} 張圖片";
+        if (uploaded == total)
+            vm.StatusMessage = $"已上傳 {uploaded} 張圖片";
+        else if (uploaded > 0)
+            vm.StatusMessage = $"已上傳 {uploaded}/{total} 張圖片 | {lastError}";
+        else
+            vm.StatusMessage = $"上傳失敗: {lastError}";
     }
 
     private void WrapSelectionWith(string openTag, string closeTag)
