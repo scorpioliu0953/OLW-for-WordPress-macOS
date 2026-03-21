@@ -20,8 +20,34 @@ public partial class MainWindow : Window
         EditorDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
         EditorDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
 
+        // Setup preview panel image resolver
         if (DataContext is MainWindowViewModel vm)
+        {
+            PreviewPanel.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
             await vm.LoadDataAsync();
+        }
+
+        // Default to HTML tab for editing
+        EditorTabs.SelectedIndex = 1;
+    }
+
+    // ── Tab switching ──
+
+    private void OnEditorTabChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (EditorTabs.SelectedIndex == 0) // Preview tab
+        {
+            RefreshPreview();
+        }
+    }
+
+    private void RefreshPreview()
+    {
+        if (DataContext is MainWindowViewModel vm)
+        {
+            PreviewPanel.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
+            PreviewPanel.RenderHtml(vm.HtmlContent);
+        }
     }
 
     // ── Post Actions ──
@@ -44,9 +70,80 @@ public partial class MainWindow : Window
     private void OnStrikeClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<s>", "</s>");
     private void OnH2Click(object? s, RoutedEventArgs e) => WrapSelectionWith("<h2>", "</h2>");
     private void OnH3Click(object? s, RoutedEventArgs e) => WrapSelectionWith("<h3>", "</h3>");
+    private void OnH4Click(object? s, RoutedEventArgs e) => WrapSelectionWith("<h4>", "</h4>");
     private void OnBlockquoteClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<blockquote>", "</blockquote>");
+    private void OnCodeClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<code>", "</code>");
     private void OnHrClick(object? s, RoutedEventArgs e) => InsertAtCursor("\n<hr />\n");
     private void OnReadMoreClick(object? s, RoutedEventArgs e) => InsertAtCursor("\n<!--more-->\n");
+
+    private void OnUlClick(object? s, RoutedEventArgs e)
+    {
+        var sel = GetSelectedText();
+        if (!string.IsNullOrEmpty(sel))
+        {
+            var lines = sel.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var items = string.Join("\n", lines.Select(l => $"  <li>{l.Trim()}</li>"));
+            ReplaceSelection($"<ul>\n{items}\n</ul>");
+        }
+        else
+        {
+            InsertAtCursor("<ul>\n  <li></li>\n</ul>");
+        }
+    }
+
+    private void OnOlClick(object? s, RoutedEventArgs e)
+    {
+        var sel = GetSelectedText();
+        if (!string.IsNullOrEmpty(sel))
+        {
+            var lines = sel.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var items = string.Join("\n", lines.Select(l => $"  <li>{l.Trim()}</li>"));
+            ReplaceSelection($"<ol>\n{items}\n</ol>");
+        }
+        else
+        {
+            InsertAtCursor("<ol>\n  <li></li>\n</ol>");
+        }
+    }
+
+    private void OnFontSizeChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (FontSizeCombo.SelectedIndex <= 0) return;
+        var item = FontSizeCombo.SelectedItem as ComboBoxItem;
+        var size = item?.Tag?.ToString();
+        if (size != null)
+        {
+            SwitchToHtmlTab();
+            WrapSelectionWith($"<span style=\"font-size:{size}px\">", "</span>");
+        }
+        FontSizeCombo.SelectedIndex = 0;
+    }
+
+    private void OnTextColorChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (TextColorCombo.SelectedIndex <= 0) return;
+        var item = TextColorCombo.SelectedItem as ComboBoxItem;
+        var color = item?.Tag?.ToString();
+        if (color != null)
+        {
+            SwitchToHtmlTab();
+            WrapSelectionWith($"<span style=\"color:{color}\">", "</span>");
+        }
+        TextColorCombo.SelectedIndex = 0;
+    }
+
+    private void OnBgColorChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (BgColorCombo.SelectedIndex <= 0) return;
+        var item = BgColorCombo.SelectedItem as ComboBoxItem;
+        var color = item?.Tag?.ToString();
+        if (color != null)
+        {
+            SwitchToHtmlTab();
+            WrapSelectionWith($"<span style=\"background-color:{color}\">", "</span>");
+        }
+        BgColorCombo.SelectedIndex = 0;
+    }
 
     private async void OnLinkClick(object? sender, RoutedEventArgs e)
     {
@@ -62,6 +159,7 @@ public partial class MainWindow : Window
         var result = await dialog.ShowDialog<LinkDialogResult?>(this);
         if (result != null)
         {
+            SwitchToHtmlTab();
             var displayText = string.IsNullOrWhiteSpace(result.Text) ? result.Url : result.Text;
             var tag = $"<a href=\"{result.Url}\">{displayText}</a>";
 
@@ -72,7 +170,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── Image Insert (local only, upload on publish) ──
+    // ── Image Insert ──
 
     private async void OnInsertImageClick(object? sender, RoutedEventArgs e)
     {
@@ -92,6 +190,7 @@ public partial class MainWindow : Window
         });
 
         if (files.Count == 0) return;
+        SwitchToHtmlTab();
         await AddLocalImages(vm, files.ToList());
     }
 
@@ -154,13 +253,21 @@ public partial class MainWindow : Window
 
     // ── Helpers ──
 
+    private void SwitchToHtmlTab()
+    {
+        EditorTabs.SelectedIndex = 1;
+    }
+
     private int GetSelectionLength() => ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
 
-    /// <summary>
-    /// Read image files and add them locally (no upload).
-    /// Inserts placeholder tags into the editor.
-    /// Images will be uploaded when user clicks Publish/Update.
-    /// </summary>
+    private string GetSelectedText()
+    {
+        var start = ContentEditor.SelectionStart;
+        var end = ContentEditor.SelectionEnd;
+        if (end <= start) return "";
+        return (ContentEditor.Text ?? "").Substring(start, end - start);
+    }
+
     private async Task AddLocalImages(MainWindowViewModel vm, List<IStorageFile> files)
     {
         var imgTags = new List<string>();
@@ -201,6 +308,7 @@ public partial class MainWindow : Window
 
     private void WrapSelectionWith(string openTag, string closeTag)
     {
+        SwitchToHtmlTab();
         var tb = ContentEditor;
         var start = tb.SelectionStart;
         var end = tb.SelectionEnd;
@@ -235,6 +343,7 @@ public partial class MainWindow : Window
 
     private void InsertAtCursor(string content)
     {
+        SwitchToHtmlTab();
         var tb = ContentEditor;
         var pos = tb.SelectionStart;
         var text = tb.Text ?? string.Empty;
@@ -250,6 +359,7 @@ public partial class MainWindow : Window
 
     private void ReplaceSelection(string content)
     {
+        SwitchToHtmlTab();
         var tb = ContentEditor;
         var start = tb.SelectionStart;
         var length = tb.SelectionEnd - start;

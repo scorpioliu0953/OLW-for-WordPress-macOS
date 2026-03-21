@@ -99,6 +99,11 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public int PendingImageCount => _pendingImages.Count;
 
+    public byte[]? GetPendingImageBytes(string id)
+    {
+        return _pendingImages.TryGetValue(id, out var item) ? item.Bytes : null;
+    }
+
     // ── Local Image Management ──
 
     /// <summary>
