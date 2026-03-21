@@ -22,9 +22,18 @@
 ## 使用方式
 
 1. 下載對應您 Mac 架構的 DMG 檔案
-2. 開啟 DMG，將「OLW for WordPress」拖曳至「應用程式」資料夾
-3. 首次開啟時輸入 WordPress 網站網址、使用者名稱及應用程式密碼
-4. 連線成功後即可開始撰寫文章
+2. **首次下載需解除 macOS 安全限制**（因為應用程式未經 Apple 簽署）：
+   ```bash
+   xattr -rd com.apple.quarantine ~/Downloads/OLWforWordPress-arm64.dmg
+   ```
+   Intel 版請將檔名改為 `OLWforWordPress-x64.dmg`
+3. 開啟 DMG，將「OLW for WordPress」拖曳至「應用程式」資料夾
+4. 如果仍顯示「已損毀」，請再對應用程式執行：
+   ```bash
+   xattr -rd com.apple.quarantine "/Applications/OLW for WordPress.app"
+   ```
+5. 首次開啟時輸入 WordPress 網站網址、使用者名稱及應用程式密碼
+6. 連線成功後即可開始撰寫文章
 
 ### 如何取得應用程式密碼
 
