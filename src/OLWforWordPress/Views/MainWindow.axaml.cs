@@ -17,7 +17,6 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        // Drag & drop on wrapper Border with Tunnel to intercept before TextBox
         EditorDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
         EditorDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
 
@@ -73,7 +72,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── Image Insert (multi-select, read via stream) ──
+    // ── Image Insert (local only, upload on publish) ──
 
     private async void OnInsertImageClick(object? sender, RoutedEventArgs e)
     {
@@ -93,7 +92,7 @@ public partial class MainWindow : Window
         });
 
         if (files.Count == 0) return;
-        await UploadStorageFiles(vm, files.ToList());
+        await AddLocalImages(vm, files.ToList());
     }
 
     // ── Drag & Drop ──
@@ -131,7 +130,7 @@ public partial class MainWindow : Window
         }
 
         if (imageFiles.Count == 0) return;
-        await UploadStorageFiles(vm, imageFiles);
+        await AddLocalImages(vm, imageFiles);
     }
 
     // ── Sidebar ──
@@ -157,23 +156,20 @@ public partial class MainWindow : Window
 
     private int GetSelectionLength() => ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
 
-    private async Task UploadStorageFiles(MainWindowViewModel vm, List<IStorageFile> files)
+    /// <summary>
+    /// Read image files and add them locally (no upload).
+    /// Inserts placeholder tags into the editor.
+    /// Images will be uploaded when user clicks Publish/Update.
+    /// </summary>
+    private async Task AddLocalImages(MainWindowViewModel vm, List<IStorageFile> files)
     {
-        vm.IsBusy = true;
-        var total = files.Count;
-        var uploaded = 0;
         var imgTags = new List<string>();
-        string lastError = "";
 
         foreach (var file in files)
         {
-            vm.StatusMessage = $"上傳圖片中... ({uploaded + 1}/{total})";
             try
             {
                 byte[] bytes;
-                var fileName = file.Name;
-
-                // Method 1: Try local file path first
                 var localPath = file.TryGetLocalPath();
                 if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
                 {
@@ -181,40 +177,26 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    // Method 2: Read via storage stream
                     await using var stream = await file.OpenReadAsync();
                     using var ms = new MemoryStream();
                     await stream.CopyToAsync(ms);
                     bytes = ms.ToArray();
                 }
 
-                var url = await vm.UploadImageAsync(bytes, fileName);
-                if (url != null)
+                if (bytes.Length > 0)
                 {
-                    imgTags.Add($"<img src=\"{url}\" alt=\"{Path.GetFileNameWithoutExtension(fileName)}\" />");
-                    uploaded++;
-                }
-                else
-                {
-                    lastError = $"上傳 {fileName} 失敗";
+                    var tag = vm.AddLocalImage(bytes, file.Name);
+                    imgTags.Add(tag);
                 }
             }
             catch (Exception ex)
             {
-                lastError = $"{file.Name}: {ex.Message}";
+                vm.StatusMessage = $"讀取 {file.Name} 失敗: {ex.Message}";
             }
         }
 
         if (imgTags.Count > 0)
             InsertAtCursor("\n" + string.Join("\n\n", imgTags) + "\n");
-
-        vm.IsBusy = false;
-        if (uploaded == total)
-            vm.StatusMessage = $"已上傳 {uploaded} 張圖片";
-        else if (uploaded > 0)
-            vm.StatusMessage = $"已上傳 {uploaded}/{total} 張圖片 | {lastError}";
-        else
-            vm.StatusMessage = $"上傳失敗: {lastError}";
     }
 
     private void WrapSelectionWith(string openTag, string closeTag)

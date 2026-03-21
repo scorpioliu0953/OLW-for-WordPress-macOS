@@ -101,7 +101,7 @@
                         <Border Grid.Row="1" Padding="10,6" Background="#fafafa"
                                 BorderBrush="#f0f0f0" BorderThickness="0,1,0,0"
                                 CornerRadius="0,0,8,8">
-                            <TextBlock Text="拖曳圖片至此區域即可上傳"
+                            <TextBlock Text="拖曳圖片至此插入，發布時自動上傳"
                                        FontSize="11" Foreground="#aaa"
                                        HorizontalAlignment="Center" />
                         </Border>
@@ -201,9 +201,19 @@
 
         <!-- Status Bar -->
         <Border Grid.Row="2" Background="White" Padding="14,6" BorderBrush="#e4e4e7" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#666" VerticalAlignment="Center" />
-                <ProgressBar Grid.Column="1"
+                <Border Grid.Column="1" Background="#FFF3E0" CornerRadius="4" Padding="8,2" Margin="8,0"
+                        IsVisible="{Binding PendingImageCount}" VerticalAlignment="Center">
+                    <TextBlock FontSize="11" Foreground="#E65100">
+                        <TextBlock.Text>
+                            <MultiBinding StringFormat="📎 {0} 張圖片待上傳">
+                                <Binding Path="PendingImageCount" />
+                            </MultiBinding>
+                        </TextBlock.Text>
+                    </TextBlock>
+                </Border>
+                <ProgressBar Grid.Column="2"
                              IsIndeterminate="True"
                              IsVisible="{Binding IsBusy}"
                              Width="120" Height="3" />

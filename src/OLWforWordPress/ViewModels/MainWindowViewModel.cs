@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using OLWforWordPress.Models;
 using OLWforWordPress.Services;
 
@@ -16,11 +17,14 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     private string _htmlContent = string.Empty;
     private string _excerpt = string.Empty;
     private string _tagsText = string.Empty;
-    private string _statusMessage = "Ready";
+    private string _statusMessage = "就緒";
     private string _selectedStatus = "draft";
     private bool _isBusy;
     private int _currentPostId;
     private BlogPost? _currentPost;
+
+    // Pending local images: key = unique id, value = (fileName, bytes)
+    private readonly Dictionary<string, (string FileName, byte[] Bytes)> _pendingImages = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -93,12 +97,75 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
     public string[] StatusOptions => ["draft", "publish", "pending", "private"];
 
+    public int PendingImageCount => _pendingImages.Count;
+
+    // ── Local Image Management ──
+
+    /// <summary>
+    /// Add image to pending queue (local only, not uploaded yet).
+    /// Returns the placeholder tag to insert into HTML content.
+    /// </summary>
+    public string AddLocalImage(byte[] bytes, string fileName)
+    {
+        var id = Guid.NewGuid().ToString("N")[..8];
+        _pendingImages[id] = (fileName, bytes);
+        OnPropertyChanged(nameof(PendingImageCount));
+        StatusMessage = $"已加入圖片: {fileName}（共 {_pendingImages.Count} 張待上傳）";
+        return $"<img src=\"local://{id}\" alt=\"{Path.GetFileNameWithoutExtension(fileName)}\" data-filename=\"{fileName}\" />";
+    }
+
+    /// <summary>
+    /// Upload all pending images and replace placeholders in content with real URLs.
+    /// </summary>
+    private async Task<string> UploadPendingImagesAsync(string content)
+    {
+        if (_pendingImages.Count == 0) return content;
+
+        var total = _pendingImages.Count;
+        var uploaded = 0;
+        var failed = 0;
+
+        foreach (var (id, (fileName, bytes)) in _pendingImages.ToList())
+        {
+            StatusMessage = $"上傳圖片 ({uploaded + 1}/{total}): {fileName}";
+            try
+            {
+                var media = await _client.UploadMediaAsync(bytes, fileName);
+                if (media != null)
+                {
+                    // Replace placeholder with real URL
+                    content = content.Replace($"local://{id}", media.SourceUrl);
+                    _pendingImages.Remove(id);
+                    uploaded++;
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"上傳 {fileName} 失敗: {ex.Message}";
+                failed++;
+            }
+        }
+
+        OnPropertyChanged(nameof(PendingImageCount));
+
+        if (failed > 0)
+            StatusMessage = $"已上傳 {uploaded}/{total} 張圖片，{failed} 張失敗";
+        else
+            StatusMessage = $"已上傳 {uploaded} 張圖片";
+
+        return content;
+    }
+
     // ── Commands ──
 
     public async Task LoadDataAsync()
     {
         IsBusy = true;
-        StatusMessage = "Loading...";
+        StatusMessage = "載入中...";
         try
         {
             var cats = await _client.GetCategoriesAsync();
@@ -111,11 +178,11 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             foreach (var p in posts)
                 RecentPosts.Add(new BlogPostListItem(p));
 
-            StatusMessage = "Ready";
+            StatusMessage = "就緒";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = $"錯誤: {ex.Message}";
         }
         finally
         {
@@ -127,15 +194,18 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
     {
         if (string.IsNullOrWhiteSpace(Title))
         {
-            StatusMessage = "Title is required.";
+            StatusMessage = "請輸入文章標題";
             return;
         }
 
         IsBusy = true;
-        StatusMessage = IsEditing ? "Updating post..." : "Publishing...";
+        StatusMessage = IsEditing ? "更新文章中..." : "發布文章中...";
 
         try
         {
+            // Upload pending images first
+            var finalContent = await UploadPendingImagesAsync(HtmlContent);
+
             var selectedCatIds = Categories.Where(c => c.IsSelected).Select(c => c.Id).ToArray();
             int[]? tagIds = null;
             if (!string.IsNullOrWhiteSpace(TagsText))
@@ -144,17 +214,19 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 tagIds = await _client.ResolveTagIdsAsync(tagNames);
             }
 
+            StatusMessage = IsEditing ? "更新文章中..." : "發布文章中...";
+
             BlogPost? result;
             if (IsEditing)
             {
-                result = await _client.UpdatePostAsync(CurrentPostId, Title, HtmlContent, SelectedStatus,
+                result = await _client.UpdatePostAsync(CurrentPostId, Title, finalContent, SelectedStatus,
                     selectedCatIds.Length > 0 ? selectedCatIds : null,
                     tagIds,
                     string.IsNullOrWhiteSpace(Excerpt) ? null : Excerpt);
             }
             else
             {
-                result = await _client.CreatePostAsync(Title, HtmlContent, SelectedStatus,
+                result = await _client.CreatePostAsync(Title, finalContent, SelectedStatus,
                     selectedCatIds.Length > 0 ? selectedCatIds : null,
                     tagIds,
                     string.IsNullOrWhiteSpace(Excerpt) ? null : Excerpt);
@@ -162,53 +234,23 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
 
             if (result != null)
             {
+                // Update content with real URLs (replace local:// placeholders)
+                HtmlContent = finalContent;
                 CurrentPostId = result.Id;
                 StatusMessage = SelectedStatus == "publish"
-                    ? $"Published! {result.Link}"
-                    : $"Saved as {SelectedStatus}. Post ID: {result.Id}";
+                    ? $"已發布！{result.Link}"
+                    : $"已儲存為 {SelectedStatus}，文章 ID: {result.Id}";
 
                 await LoadDataAsync();
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = $"錯誤: {ex.Message}";
         }
         finally
         {
             IsBusy = false;
-        }
-    }
-
-    public async Task<string?> UploadImageAsync(string filePath)
-    {
-        try
-        {
-            StatusMessage = "上傳圖片中...";
-            var media = await _client.UploadMediaAsync(filePath);
-            StatusMessage = media != null ? "圖片已上傳" : "上傳失敗";
-            return media?.SourceUrl;
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"上傳錯誤: {ex.Message}";
-            return null;
-        }
-    }
-
-    public async Task<string?> UploadImageAsync(byte[] fileBytes, string fileName)
-    {
-        try
-        {
-            StatusMessage = "上傳圖片中...";
-            var media = await _client.UploadMediaAsync(fileBytes, fileName);
-            StatusMessage = media != null ? "圖片已上傳" : "上傳失敗";
-            return media?.SourceUrl;
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"上傳錯誤: {ex.Message}";
-            return null;
         }
     }
 
@@ -221,14 +263,16 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
         Excerpt = string.Empty;
         TagsText = string.Empty;
         SelectedStatus = "draft";
+        _pendingImages.Clear();
         foreach (var c in Categories) c.IsSelected = false;
-        StatusMessage = "New post";
+        StatusMessage = "新文章";
+        OnPropertyChanged(nameof(PendingImageCount));
     }
 
     public async Task OpenPostAsync(BlogPost post)
     {
         IsBusy = true;
-        StatusMessage = "Loading post...";
+        StatusMessage = "載入文章中...";
         try
         {
             var full = await _client.GetPostAsync(post.Id);
@@ -240,16 +284,18 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
                 HtmlContent = full.Content.Value;
                 Excerpt = full.Excerpt.Value;
                 SelectedStatus = full.Status;
+                _pendingImages.Clear();
+                OnPropertyChanged(nameof(PendingImageCount));
 
                 foreach (var c in Categories)
                     c.IsSelected = full.Categories.Contains(c.Id);
 
-                StatusMessage = $"Editing: {full.Title.Value}";
+                StatusMessage = $"編輯中: {full.Title.Value}";
             }
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = $"錯誤: {ex.Message}";
         }
         finally
         {
@@ -265,11 +311,11 @@ public class MainWindowViewModel : INotifyPropertyChanged, IDisposable
             await _client.DeletePostAsync(post.Id);
             if (CurrentPostId == post.Id) NewPost();
             await LoadDataAsync();
-            StatusMessage = "Post deleted.";
+            StatusMessage = "文章已刪除";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error: {ex.Message}";
+            StatusMessage = $"錯誤: {ex.Message}";
         }
         finally
         {
