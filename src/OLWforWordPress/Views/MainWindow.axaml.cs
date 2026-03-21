@@ -3,7 +3,6 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using OLWforWordPress.Models;
 using OLWforWordPress.ViewModels;
 
 namespace OLWforWordPress.Views;
@@ -18,28 +17,23 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        // Setup drag & drop
         ContentEditor.AddHandler(DragDrop.DropEvent, OnDrop);
         ContentEditor.AddHandler(DragDrop.DragOverEvent, OnDragOver);
 
         if (DataContext is MainWindowViewModel vm)
-        {
             await vm.LoadDataAsync();
-        }
     }
 
     // ── Toolbar: Post Actions ──
 
     private void OnNewPostClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm)
-            vm.NewPost();
+        if (DataContext is MainWindowViewModel vm) vm.NewPost();
     }
 
     private async void OnPublishClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm)
-            await vm.PublishAsync();
+        if (DataContext is MainWindowViewModel vm) await vm.PublishAsync();
     }
 
     // ── Toolbar: Formatting ──
@@ -57,24 +51,24 @@ public partial class MainWindow : Window
     private async void OnLinkClick(object? sender, RoutedEventArgs e)
     {
         var dialog = new LinkDialog();
-        var selectedText = ContentEditor.SelectedText;
-        if (!string.IsNullOrEmpty(selectedText))
-            dialog.DisplayText = selectedText;
+        var selStart = ContentEditor.SelectionStart;
+        var selEnd = ContentEditor.SelectionEnd;
+        if (selEnd > selStart)
+        {
+            var curText = ContentEditor.Text ?? string.Empty;
+            dialog.DisplayText = curText.Substring(selStart, selEnd - selStart);
+        }
 
         var result = await dialog.ShowDialog<LinkDialogResult?>(this);
         if (result != null)
         {
-            var text = string.IsNullOrWhiteSpace(result.Text) ? result.Url : result.Text;
-            var tag = $"<a href=\"{result.Url}\">{text}</a>";
+            var displayText = string.IsNullOrWhiteSpace(result.Text) ? result.Url : result.Text;
+            var tag = $"<a href=\"{result.Url}\">{displayText}</a>";
 
-            if (ContentEditor.SelectionLength > 0)
-            {
+            if (GetSelectionLength() > 0)
                 ReplaceSelection(tag);
-            }
             else
-            {
                 InsertAtCursor(tag);
-            }
         }
     }
 
@@ -150,6 +144,11 @@ public partial class MainWindow : Window
 
     // ── Helpers ──
 
+    private int GetSelectionLength()
+    {
+        return ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
+    }
+
     private async Task UploadAndInsertImages(MainWindowViewModel vm, List<string> imagePaths)
     {
         vm.IsBusy = true;
@@ -169,9 +168,7 @@ public partial class MainWindow : Window
         }
 
         if (imgTags.Count > 0)
-        {
             InsertAtCursor("\n" + string.Join("\n", imgTags) + "\n");
-        }
 
         vm.IsBusy = false;
         vm.StatusMessage = uploaded == total
@@ -183,7 +180,8 @@ public partial class MainWindow : Window
     {
         var tb = ContentEditor;
         var start = tb.SelectionStart;
-        var length = tb.SelectionLength;
+        var end = tb.SelectionEnd;
+        var length = end - start;
         var text = tb.Text ?? string.Empty;
 
         if (length > 0)
@@ -194,7 +192,7 @@ public partial class MainWindow : Window
             Dispatcher.UIThread.Post(() =>
             {
                 tb.SelectionStart = start + replacement.Length;
-                tb.SelectionLength = 0;
+                tb.SelectionEnd = tb.SelectionStart;
             });
         }
         else
@@ -204,7 +202,7 @@ public partial class MainWindow : Window
             Dispatcher.UIThread.Post(() =>
             {
                 tb.SelectionStart = start + openTag.Length;
-                tb.SelectionLength = 0;
+                tb.SelectionEnd = tb.SelectionStart;
             });
         }
 
@@ -221,7 +219,7 @@ public partial class MainWindow : Window
         Dispatcher.UIThread.Post(() =>
         {
             tb.SelectionStart = pos + content.Length;
-            tb.SelectionLength = 0;
+            tb.SelectionEnd = tb.SelectionStart;
         });
         SyncContentToViewModel();
         tb.Focus();
@@ -231,13 +229,13 @@ public partial class MainWindow : Window
     {
         var tb = ContentEditor;
         var start = tb.SelectionStart;
-        var length = tb.SelectionLength;
+        var length = tb.SelectionEnd - start;
         var text = tb.Text ?? string.Empty;
         tb.Text = text.Remove(start, length).Insert(start, content);
         Dispatcher.UIThread.Post(() =>
         {
             tb.SelectionStart = start + content.Length;
-            tb.SelectionLength = 0;
+            tb.SelectionEnd = tb.SelectionStart;
         });
         SyncContentToViewModel();
         tb.Focus();
