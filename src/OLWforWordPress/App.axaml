@@ -4,5 +4,87 @@
              RequestedThemeVariant="Light">
     <Application.Styles>
         <FluentTheme />
+
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="MinWidth" Value="34" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#e8e8e8" />
+            <Setter Property="BorderBrush" Value="#d0d0d0" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#d8d8d8" />
+        </Style>
+
+        <Style Selector="Button.action-btn">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+
+        <Style Selector="Button.publish-btn">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="#0066CC" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.publish-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#0055AA" />
+        </Style>
+
+        <Style Selector="Button.danger-btn">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Background" Value="#FFF0F0" />
+            <Setter Property="Foreground" Value="#CC3333" />
+            <Setter Property="BorderBrush" Value="#FFCCCC" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.danger-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FFE0E0" />
+        </Style>
+
+        <Style Selector="TextBox.title-input">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+            <Setter Property="BorderBrush" Value="#e0e0e0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="8,10" />
+        </Style>
+        <Style Selector="TextBox.title-input:focus /template/ Border">
+            <Setter Property="BorderBrush" Value="#0066CC" />
+        </Style>
+
+        <Style Selector="TextBox.editor-input">
+            <Setter Property="FontFamily" Value="SF Mono, Menlo, Consolas, monospace" />
+            <Setter Property="FontSize" Value="13.5" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="BorderBrush" Value="#e0e0e0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="LineHeight" Value="22" />
+        </Style>
+
+        <Style Selector="TextBlock.sidebar-title">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#444" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
     </Application.Styles>
 </Application>

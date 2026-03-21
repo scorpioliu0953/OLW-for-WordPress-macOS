@@ -17,14 +17,15 @@ public partial class MainWindow : Window
 
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        ContentEditor.AddHandler(DragDrop.DropEvent, OnDrop);
-        ContentEditor.AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        // Drag & drop on the wrapper Border (not TextBox - TextBox eats drag events on macOS)
+        EditorDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
+        EditorDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
 
         if (DataContext is MainWindowViewModel vm)
             await vm.LoadDataAsync();
     }
 
-    // ── Toolbar: Post Actions ──
+    // ── Post Actions ──
 
     private void OnNewPostClick(object? sender, RoutedEventArgs e)
     {
@@ -36,7 +37,7 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm) await vm.PublishAsync();
     }
 
-    // ── Toolbar: Formatting ──
+    // ── Formatting Toolbar ──
 
     private void OnBoldClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<strong>", "</strong>");
     private void OnItalicClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<em>", "</em>");
@@ -72,7 +73,7 @@ public partial class MainWindow : Window
         }
     }
 
-    // ── Toolbar: Image Insert (multi-select) ──
+    // ── Image Insert (multi-select) ──
 
     private async void OnInsertImageClick(object? sender, RoutedEventArgs e)
     {
@@ -95,29 +96,42 @@ public partial class MainWindow : Window
         await UploadAndInsertImages(vm, files.Select(f => f.Path.LocalPath).ToList());
     }
 
-    // ── Drag & Drop ──
+    // ── Drag & Drop (on wrapper Border, tunneling to catch before TextBox) ──
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = e.Data.Contains(DataFormats.Files)
-            ? DragDropEffects.Copy
-            : DragDropEffects.None;
+        if (e.Data.Contains(DataFormats.Files))
+        {
+            e.DragEffects = DragDropEffects.Copy;
+            e.Handled = true;
+        }
+        else
+        {
+            e.DragEffects = DragDropEffects.None;
+        }
     }
 
     private async void OnDrop(object? sender, DragEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm) return;
 
-        var storageItems = e.Data.GetFiles();
-        if (storageItems == null) return;
+        // Try getting files from data
+        var storageItems = e.Data.GetFiles()?.ToList();
+
+        if (storageItems == null || storageItems.Count == 0) return;
+
+        e.Handled = true;
 
         var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
 
-        var imagePaths = storageItems
-            .Select(f => f.Path.LocalPath)
-            .Where(p => imageExtensions.Contains(Path.GetExtension(p)))
-            .ToList();
+        var imagePaths = new List<string>();
+        foreach (var item in storageItems)
+        {
+            var path = item.Path.LocalPath;
+            if (!string.IsNullOrEmpty(path) && imageExtensions.Contains(Path.GetExtension(path)))
+                imagePaths.Add(path);
+        }
 
         if (imagePaths.Count == 0) return;
         await UploadAndInsertImages(vm, imagePaths);
@@ -144,10 +158,7 @@ public partial class MainWindow : Window
 
     // ── Helpers ──
 
-    private int GetSelectionLength()
-    {
-        return ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
-    }
+    private int GetSelectionLength() => ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
 
     private async Task UploadAndInsertImages(MainWindowViewModel vm, List<string> imagePaths)
     {
@@ -168,7 +179,7 @@ public partial class MainWindow : Window
         }
 
         if (imgTags.Count > 0)
-            InsertAtCursor("\n" + string.Join("\n", imgTags) + "\n");
+            InsertAtCursor("\n" + string.Join("\n\n", imgTags) + "\n");
 
         vm.IsBusy = false;
         vm.StatusMessage = uploaded == total
@@ -269,15 +280,24 @@ public class LinkDialog : Window
     public LinkDialog()
     {
         Title = "插入連結";
-        Width = 400;
-        Height = 200;
+        Width = 420;
+        Height = 220;
         CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Background = Avalonia.Media.Brushes.White;
 
-        _urlBox = new TextBox { Watermark = "https://example.com" };
-        _textBox = new TextBox { Watermark = "顯示文字（選填）" };
+        _urlBox = new TextBox { Watermark = "https://example.com", CornerRadius = new Avalonia.CornerRadius(6) };
+        _textBox = new TextBox { Watermark = "顯示文字（選填）", CornerRadius = new Avalonia.CornerRadius(6) };
 
-        var okBtn = new Button { Content = "確定", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+        var okBtn = new Button
+        {
+            Content = "插入",
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Background = Avalonia.Media.Brush.Parse("#0066CC"),
+            Foreground = Avalonia.Media.Brushes.White,
+            Padding = new Avalonia.Thickness(20, 6),
+            CornerRadius = new Avalonia.CornerRadius(6)
+        };
         okBtn.Click += (_, _) =>
         {
             if (!string.IsNullOrWhiteSpace(_urlBox.Text))
@@ -286,7 +306,13 @@ public class LinkDialog : Window
                 Close(null);
         };
 
-        var cancelBtn = new Button { Content = "取消", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right };
+        var cancelBtn = new Button
+        {
+            Content = "取消",
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Padding = new Avalonia.Thickness(16, 6),
+            CornerRadius = new Avalonia.CornerRadius(6)
+        };
         cancelBtn.Click += (_, _) => Close(null);
 
         var btnPanel = new StackPanel
@@ -294,18 +320,19 @@ public class LinkDialog : Window
             Orientation = Avalonia.Layout.Orientation.Horizontal,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
             Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 4, 0, 0),
             Children = { cancelBtn, okBtn }
         };
 
         Content = new StackPanel
         {
-            Margin = new Avalonia.Thickness(20),
+            Margin = new Avalonia.Thickness(24),
             Spacing = 10,
             Children =
             {
-                new TextBlock { Text = "網址", FontWeight = Avalonia.Media.FontWeight.SemiBold },
+                new TextBlock { Text = "網址", FontWeight = Avalonia.Media.FontWeight.SemiBold, FontSize = 13 },
                 _urlBox,
-                new TextBlock { Text = "顯示文字", FontWeight = Avalonia.Media.FontWeight.SemiBold },
+                new TextBlock { Text = "顯示文字", FontWeight = Avalonia.Media.FontWeight.SemiBold, FontSize = 13 },
                 _textBox,
                 btnPanel
             }
