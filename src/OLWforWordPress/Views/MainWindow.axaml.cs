@@ -18,9 +18,11 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
     }
 
-    /// <summary>Returns the TextBox in the currently active tab.</summary>
-    private TextBox ActiveEditor =>
-        EditorTabs?.SelectedIndex == 1 ? HtmlOnlyEditor : ContentEditor;
+    /// <summary>
+    /// In visual tab (0): toolbar inserts formatted HTML and refreshes preview.
+    /// In HTML tab (1): toolbar works on ContentEditor TextBox selection.
+    /// </summary>
+    private bool IsVisualTab => EditorTabs?.SelectedIndex == 0;
 
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
@@ -30,15 +32,14 @@ public partial class MainWindow : Window
         HtmlDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
         HtmlDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
 
-        // Setup preview panel image resolver
         if (DataContext is MainWindowViewModel vm)
         {
             PreviewPanel.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
             await vm.LoadDataAsync();
         }
 
-        // Live preview refresh timer (polls every 800ms)
-        _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+        // Live preview auto-refresh
+        _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         _previewTimer.Tick += (_, _) =>
         {
             if (DataContext is MainWindowViewModel v && v.HtmlContent != _lastPreviewContent)
@@ -59,10 +60,8 @@ public partial class MainWindow : Window
     private void OnEditorTabChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (EditorTabs == null) return;
-        if (EditorTabs.SelectedIndex == 0) // Visual edit tab
-        {
+        if (EditorTabs.SelectedIndex == 0)
             RefreshPreview();
-        }
     }
 
     private void RefreshPreview()
@@ -72,6 +71,41 @@ public partial class MainWindow : Window
             PreviewPanel.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
             PreviewPanel.RenderHtml(vm.HtmlContent);
         }
+    }
+
+    // ── Compose bar (visual tab) ──
+
+    private void OnComposeKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            InsertComposedText();
+            e.Handled = true;
+        }
+    }
+
+    private void OnComposeInsert(object? sender, RoutedEventArgs e)
+    {
+        InsertComposedText();
+    }
+
+    private void InsertComposedText()
+    {
+        var text = ComposeBox.Text?.Trim();
+        if (string.IsNullOrEmpty(text)) return;
+
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.HtmlContent = (vm.HtmlContent ?? "").TrimEnd() + $"\n<p>{EscapeHtml(text)}</p>\n";
+            ComposeBox.Text = string.Empty;
+            _lastPreviewContent = vm.HtmlContent;
+            RefreshPreview();
+        }
+    }
+
+    private static string EscapeHtml(string text)
+    {
+        return text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
     }
 
     // ── Post Actions ──
@@ -92,46 +126,174 @@ public partial class MainWindow : Window
     }
 
     // ── Formatting Toolbar ──
+    // Visual tab: insert formatted block into HtmlContent + refresh preview.
+    // HTML tab: wrap selection in ContentEditor TextBox.
 
-    private void OnBoldClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<strong>", "</strong>");
-    private void OnItalicClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<em>", "</em>");
-    private void OnUnderlineClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<u>", "</u>");
-    private void OnStrikeClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<s>", "</s>");
-    private void OnH2Click(object? s, RoutedEventArgs e) => WrapSelectionWith("<h2>", "</h2>");
-    private void OnH3Click(object? s, RoutedEventArgs e) => WrapSelectionWith("<h3>", "</h3>");
-    private void OnH4Click(object? s, RoutedEventArgs e) => WrapSelectionWith("<h4>", "</h4>");
-    private void OnBlockquoteClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<blockquote>", "</blockquote>");
-    private void OnCodeClick(object? s, RoutedEventArgs e) => WrapSelectionWith("<code>", "</code>");
-    private void OnHrClick(object? s, RoutedEventArgs e) => InsertAtCursor("\n<hr />\n");
-    private void OnReadMoreClick(object? s, RoutedEventArgs e) => InsertAtCursor("\n<!--more-->\n");
+    private void OnBoldClick(object? s, RoutedEventArgs e) => ApplyFormat("<strong>", "</strong>");
+    private void OnItalicClick(object? s, RoutedEventArgs e) => ApplyFormat("<em>", "</em>");
+    private void OnUnderlineClick(object? s, RoutedEventArgs e) => ApplyFormat("<u>", "</u>");
+    private void OnStrikeClick(object? s, RoutedEventArgs e) => ApplyFormat("<s>", "</s>");
+    private void OnCodeClick(object? s, RoutedEventArgs e) => ApplyFormat("<code>", "</code>");
 
-    private void OnUlClick(object? s, RoutedEventArgs e)
+    private void OnH2Click(object? s, RoutedEventArgs e) => ApplyBlockFormat("<h2>", "</h2>");
+    private void OnH3Click(object? s, RoutedEventArgs e) => ApplyBlockFormat("<h3>", "</h3>");
+    private void OnH4Click(object? s, RoutedEventArgs e) => ApplyBlockFormat("<h4>", "</h4>");
+    private void OnBlockquoteClick(object? s, RoutedEventArgs e) => ApplyBlockFormat("<blockquote>", "</blockquote>");
+
+    private void OnHrClick(object? s, RoutedEventArgs e)
     {
-        var sel = GetSelectedText();
-        if (!string.IsNullOrEmpty(sel))
+        if (IsVisualTab)
+            AppendToContent("\n<hr />\n");
+        else
+            InsertAtCursor("\n<hr />\n");
+    }
+
+    private void OnReadMoreClick(object? s, RoutedEventArgs e)
+    {
+        if (IsVisualTab)
+            AppendToContent("\n<!--more-->\n");
+        else
+            InsertAtCursor("\n<!--more-->\n");
+    }
+
+    /// <summary>
+    /// Inline formatting: in visual tab wraps compose box selection;
+    /// in HTML tab wraps ContentEditor selection.
+    /// </summary>
+    private void ApplyFormat(string openTag, string closeTag)
+    {
+        if (IsVisualTab)
         {
-            var lines = sel.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            var items = string.Join("\n", lines.Select(l => $"  <li>{l.Trim()}</li>"));
-            ReplaceSelection($"<ul>\n{items}\n</ul>");
+            // Wrap selected text in compose box
+            var tb = ComposeBox;
+            var start = tb.SelectionStart;
+            var end = tb.SelectionEnd;
+            var text = tb.Text ?? "";
+            var length = end - start;
+
+            if (length > 0)
+            {
+                var selected = text.Substring(start, length);
+                var replacement = openTag + selected + closeTag;
+                tb.Text = text.Remove(start, length).Insert(start, replacement);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    tb.SelectionStart = start + replacement.Length;
+                    tb.SelectionEnd = tb.SelectionStart;
+                });
+            }
+            else
+            {
+                var insertion = openTag + closeTag;
+                tb.Text = (text ?? "").Insert(start, insertion);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    tb.SelectionStart = start + openTag.Length;
+                    tb.SelectionEnd = tb.SelectionStart;
+                });
+            }
+            tb.Focus();
         }
         else
         {
-            InsertAtCursor("<ul>\n  <li></li>\n</ul>");
+            WrapSelectionWith(openTag, closeTag);
+        }
+    }
+
+    /// <summary>
+    /// Block formatting: in visual tab wraps compose text as a block and inserts;
+    /// in HTML tab wraps ContentEditor selection.
+    /// </summary>
+    private void ApplyBlockFormat(string openTag, string closeTag)
+    {
+        if (IsVisualTab)
+        {
+            var text = ComposeBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(text))
+            {
+                if (DataContext is MainWindowViewModel vm)
+                {
+                    vm.HtmlContent = (vm.HtmlContent ?? "").TrimEnd() + $"\n{openTag}{EscapeHtml(text)}{closeTag}\n";
+                    ComposeBox.Text = string.Empty;
+                    _lastPreviewContent = vm.HtmlContent;
+                    RefreshPreview();
+                }
+            }
+            else
+            {
+                // Insert empty block
+                AppendToContent($"\n{openTag}{closeTag}\n");
+            }
+        }
+        else
+        {
+            WrapSelectionWith(openTag, closeTag);
+        }
+    }
+
+    private void OnUlClick(object? s, RoutedEventArgs e)
+    {
+        if (IsVisualTab)
+        {
+            var text = ComposeBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(text))
+            {
+                var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                var items = string.Join("\n", lines.Select(l => $"  <li>{EscapeHtml(l.Trim())}</li>"));
+                AppendToContent($"\n<ul>\n{items}\n</ul>\n");
+                ComposeBox.Text = string.Empty;
+            }
+            else
+            {
+                AppendToContent("<ul>\n  <li></li>\n</ul>");
+            }
+        }
+        else
+        {
+            var sel = GetSelectedText();
+            if (!string.IsNullOrEmpty(sel))
+            {
+                var lines = sel.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                var items = string.Join("\n", lines.Select(l => $"  <li>{l.Trim()}</li>"));
+                ReplaceSelection($"<ul>\n{items}\n</ul>");
+            }
+            else
+            {
+                InsertAtCursor("<ul>\n  <li></li>\n</ul>");
+            }
         }
     }
 
     private void OnOlClick(object? s, RoutedEventArgs e)
     {
-        var sel = GetSelectedText();
-        if (!string.IsNullOrEmpty(sel))
+        if (IsVisualTab)
         {
-            var lines = sel.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            var items = string.Join("\n", lines.Select(l => $"  <li>{l.Trim()}</li>"));
-            ReplaceSelection($"<ol>\n{items}\n</ol>");
+            var text = ComposeBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(text))
+            {
+                var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                var items = string.Join("\n", lines.Select(l => $"  <li>{EscapeHtml(l.Trim())}</li>"));
+                AppendToContent($"\n<ol>\n{items}\n</ol>\n");
+                ComposeBox.Text = string.Empty;
+            }
+            else
+            {
+                AppendToContent("<ol>\n  <li></li>\n</ol>");
+            }
         }
         else
         {
-            InsertAtCursor("<ol>\n  <li></li>\n</ol>");
+            var sel = GetSelectedText();
+            if (!string.IsNullOrEmpty(sel))
+            {
+                var lines = sel.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                var items = string.Join("\n", lines.Select(l => $"  <li>{l.Trim()}</li>"));
+                ReplaceSelection($"<ol>\n{items}\n</ol>");
+            }
+            else
+            {
+                InsertAtCursor("<ol>\n  <li></li>\n</ol>");
+            }
         }
     }
 
@@ -141,7 +303,7 @@ public partial class MainWindow : Window
         var item = FontSizeCombo.SelectedItem as ComboBoxItem;
         var size = item?.Tag?.ToString();
         if (size != null)
-            WrapSelectionWith($"<span style=\"font-size:{size}px\">", "</span>");
+            ApplyFormat($"<span style=\"font-size:{size}px\">", "</span>");
         FontSizeCombo.SelectedIndex = 0;
     }
 
@@ -151,7 +313,7 @@ public partial class MainWindow : Window
         var item = TextColorCombo.SelectedItem as ComboBoxItem;
         var color = item?.Tag?.ToString();
         if (color != null)
-            WrapSelectionWith($"<span style=\"color:{color}\">", "</span>");
+            ApplyFormat($"<span style=\"color:{color}\">", "</span>");
         TextColorCombo.SelectedIndex = 0;
     }
 
@@ -161,28 +323,56 @@ public partial class MainWindow : Window
         var item = BgColorCombo.SelectedItem as ComboBoxItem;
         var color = item?.Tag?.ToString();
         if (color != null)
-            WrapSelectionWith($"<span style=\"background-color:{color}\">", "</span>");
+            ApplyFormat($"<span style=\"background-color:{color}\">", "</span>");
         BgColorCombo.SelectedIndex = 0;
     }
 
     private async void OnLinkClick(object? sender, RoutedEventArgs e)
     {
-        var tb = ActiveEditor;
         var dialog = new LinkDialog();
-        var selStart = tb.SelectionStart;
-        var selEnd = tb.SelectionEnd;
-        if (selEnd > selStart)
+
+        if (IsVisualTab)
         {
-            var curText = tb.Text ?? string.Empty;
-            dialog.DisplayText = curText.Substring(selStart, selEnd - selStart);
+            var selStart = ComposeBox.SelectionStart;
+            var selEnd = ComposeBox.SelectionEnd;
+            if (selEnd > selStart)
+                dialog.DisplayText = (ComposeBox.Text ?? "").Substring(selStart, selEnd - selStart);
+        }
+        else
+        {
+            var selStart = ContentEditor.SelectionStart;
+            var selEnd = ContentEditor.SelectionEnd;
+            if (selEnd > selStart)
+                dialog.DisplayText = (ContentEditor.Text ?? "").Substring(selStart, selEnd - selStart);
         }
 
         var result = await dialog.ShowDialog<LinkDialogResult?>(this);
-        if (result != null)
-        {
-            var displayText = string.IsNullOrWhiteSpace(result.Text) ? result.Url : result.Text;
-            var tag = $"<a href=\"{result.Url}\">{displayText}</a>";
+        if (result == null) return;
 
+        var displayText = string.IsNullOrWhiteSpace(result.Text) ? result.Url : result.Text;
+        var tag = $"<a href=\"{result.Url}\">{displayText}</a>";
+
+        if (IsVisualTab)
+        {
+            // Insert link into compose box or append to content
+            if (!string.IsNullOrEmpty(ComposeBox.Text))
+            {
+                var tb = ComposeBox;
+                var pos = tb.SelectionStart;
+                var len = tb.SelectionEnd - pos;
+                var text = tb.Text ?? "";
+                if (len > 0)
+                    tb.Text = text.Remove(pos, len).Insert(pos, tag);
+                else
+                    tb.Text = text.Insert(pos, tag);
+            }
+            else
+            {
+                AppendToContent($"\n<p>{tag}</p>\n");
+            }
+        }
+        else
+        {
             if (GetSelectionLength() > 0)
                 ReplaceSelection(tag);
             else
@@ -274,17 +464,18 @@ public partial class MainWindow : Window
 
     // ── Helpers ──
 
-    private int GetSelectionLength() => ActiveEditor.SelectionEnd - ActiveEditor.SelectionStart;
-
-    private string GetSelectedText()
+    /// <summary>Append HTML to the end of HtmlContent and refresh preview.</summary>
+    private void AppendToContent(string html)
     {
-        var tb = ActiveEditor;
-        var start = tb.SelectionStart;
-        var end = tb.SelectionEnd;
-        if (end <= start) return "";
-        return (tb.Text ?? "").Substring(start, end - start);
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.HtmlContent = (vm.HtmlContent ?? "").TrimEnd() + html;
+            _lastPreviewContent = vm.HtmlContent;
+            RefreshPreview();
+        }
     }
 
+    /// <summary>Add local images - works from both tabs.</summary>
     private async Task AddLocalImages(MainWindowViewModel vm, List<IStorageFile> files)
     {
         var imgTags = new List<string>();
@@ -320,12 +511,30 @@ public partial class MainWindow : Window
         }
 
         if (imgTags.Count > 0)
-            InsertAtCursor("\n" + string.Join("\n\n", imgTags) + "\n");
+        {
+            var html = "\n" + string.Join("\n\n", imgTags) + "\n";
+            if (IsVisualTab)
+                AppendToContent(html);
+            else
+                InsertAtCursor(html);
+        }
+    }
+
+    // ── HTML tab TextBox helpers (for ContentEditor) ──
+
+    private int GetSelectionLength() => ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
+
+    private string GetSelectedText()
+    {
+        var start = ContentEditor.SelectionStart;
+        var end = ContentEditor.SelectionEnd;
+        if (end <= start) return "";
+        return (ContentEditor.Text ?? "").Substring(start, end - start);
     }
 
     private void WrapSelectionWith(string openTag, string closeTag)
     {
-        var tb = ActiveEditor;
+        var tb = ContentEditor;
         var start = tb.SelectionStart;
         var end = tb.SelectionEnd;
         var length = end - start;
@@ -353,13 +562,13 @@ public partial class MainWindow : Window
             });
         }
 
-        SyncContentToViewModel();
+        SyncHtmlEditorToViewModel();
         tb.Focus();
     }
 
     private void InsertAtCursor(string content)
     {
-        var tb = ActiveEditor;
+        var tb = ContentEditor;
         var pos = tb.SelectionStart;
         var text = tb.Text ?? string.Empty;
         tb.Text = text.Insert(pos, content);
@@ -368,13 +577,13 @@ public partial class MainWindow : Window
             tb.SelectionStart = pos + content.Length;
             tb.SelectionEnd = tb.SelectionStart;
         });
-        SyncContentToViewModel();
+        SyncHtmlEditorToViewModel();
         tb.Focus();
     }
 
     private void ReplaceSelection(string content)
     {
-        var tb = ActiveEditor;
+        var tb = ContentEditor;
         var start = tb.SelectionStart;
         var length = tb.SelectionEnd - start;
         var text = tb.Text ?? string.Empty;
@@ -384,14 +593,14 @@ public partial class MainWindow : Window
             tb.SelectionStart = start + content.Length;
             tb.SelectionEnd = tb.SelectionStart;
         });
-        SyncContentToViewModel();
+        SyncHtmlEditorToViewModel();
         tb.Focus();
     }
 
-    private void SyncContentToViewModel()
+    private void SyncHtmlEditorToViewModel()
     {
         if (DataContext is MainWindowViewModel vm)
-            vm.HtmlContent = ActiveEditor.Text ?? string.Empty;
+            vm.HtmlContent = ContentEditor.Text ?? string.Empty;
     }
 }
 

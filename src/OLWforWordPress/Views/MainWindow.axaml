@@ -152,41 +152,37 @@
                     </TabControl.Styles>
 
                     <!-- Visual Edit Tab (default) -->
-                    <TabItem Header="視覺編輯">
+                    <TabItem Header="編輯">
                         <Border x:Name="EditorDropZone"
                                 Background="White" CornerRadius="0,0,8,8"
                                 BorderBrush="#e4e4e7" BorderThickness="1,0,1,1"
                                 DragDrop.AllowDrop="True">
-                            <Grid RowDefinitions="2*,Auto,3*,Auto">
-                                <!-- Editor -->
-                                <TextBox Grid.Row="0"
-                                         x:Name="ContentEditor"
-                                         Text="{Binding HtmlContent}"
-                                         Watermark="在此輸入文章內容（支援 HTML）..."
-                                         AcceptsReturn="True"
-                                         AcceptsTab="True"
-                                         TextWrapping="Wrap"
-                                         Classes="editor-input"
-                                         BorderThickness="0" />
+                            <Grid RowDefinitions="*,Auto">
+                                <!-- Full-height visual preview -->
+                                <ctrl:HtmlPreviewPanel Grid.Row="0" x:Name="PreviewPanel" />
 
-                                <!-- Preview divider -->
-                                <Border Grid.Row="1" Background="#f5f5f5" Padding="8,3"
-                                        BorderBrush="#e4e4e7" BorderThickness="0,1">
-                                    <TextBlock Text="▼ 即時預覽" FontSize="11" Foreground="#999" />
-                                </Border>
-
-                                <!-- Live Preview -->
-                                <Border Grid.Row="2" Background="White">
-                                    <ctrl:HtmlPreviewPanel x:Name="PreviewPanel" />
-                                </Border>
-
-                                <!-- Drop hint -->
-                                <Border Grid.Row="3" Padding="10,6" Background="#fafafa"
-                                        BorderBrush="#f0f0f0" BorderThickness="0,1,0,0"
+                                <!-- Compose bar -->
+                                <Border Grid.Row="1" Background="#f8f8fa" Padding="8,6"
+                                        BorderBrush="#e4e4e7" BorderThickness="0,1,0,0"
                                         CornerRadius="0,0,8,8">
-                                    <TextBlock Text="拖曳圖片至此插入，發布時自動上傳"
-                                               FontSize="11" Foreground="#aaa"
-                                               HorizontalAlignment="Center" />
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBox x:Name="ComposeBox"
+                                                 Watermark="輸入文字，按 Enter 新增段落… 拖曳圖片至此插入"
+                                                 AcceptsReturn="False"
+                                                 TextWrapping="Wrap"
+                                                 MinHeight="32"
+                                                 CornerRadius="6"
+                                                 KeyDown="OnComposeKeyDown"
+                                                 FontSize="14" />
+                                        <Button Grid.Column="1" Content="插入"
+                                                Click="OnComposeInsert"
+                                                Margin="6,0,0,0"
+                                                VerticalAlignment="Center"
+                                                Padding="12,6"
+                                                CornerRadius="6"
+                                                Background="#0066CC"
+                                                Foreground="White" />
+                                    </Grid>
                                 </Border>
                             </Grid>
                         </Border>
@@ -200,7 +196,7 @@
                                 DragDrop.AllowDrop="True">
                             <Grid RowDefinitions="*,Auto">
                                 <TextBox Grid.Row="0"
-                                         x:Name="HtmlOnlyEditor"
+                                         x:Name="ContentEditor"
                                          Text="{Binding HtmlContent}"
                                          Watermark="在此輸入文章內容（支援 HTML）..."
                                          AcceptsReturn="True"
@@ -212,7 +208,7 @@
                                 <Border Grid.Row="1" Padding="10,6" Background="#fafafa"
                                         BorderBrush="#f0f0f0" BorderThickness="0,1,0,0"
                                         CornerRadius="0,0,8,8">
-                                    <TextBlock Text="直接編輯 HTML 原始碼"
+                                    <TextBlock Text="拖曳圖片至此插入，發布時自動上傳"
                                                FontSize="11" Foreground="#aaa"
                                                HorizontalAlignment="Center" />
                                 </Border>
