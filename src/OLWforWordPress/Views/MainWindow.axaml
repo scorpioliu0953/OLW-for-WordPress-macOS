@@ -151,40 +151,11 @@
                         </Style>
                     </TabControl.Styles>
 
-                    <!-- Visual Edit Tab (default) -->
+                    <!-- Visual Edit Tab (WYSIWYG block editor) -->
                     <TabItem Header="編輯">
-                        <Border x:Name="EditorDropZone"
-                                Background="White" CornerRadius="0,0,8,8"
-                                BorderBrush="#e4e4e7" BorderThickness="1,0,1,1"
-                                DragDrop.AllowDrop="True">
-                            <Grid RowDefinitions="*,Auto">
-                                <!-- Full-height visual preview -->
-                                <ctrl:HtmlPreviewPanel Grid.Row="0" x:Name="PreviewPanel" />
-
-                                <!-- Compose bar -->
-                                <Border Grid.Row="1" Background="#f8f8fa" Padding="8,6"
-                                        BorderBrush="#e4e4e7" BorderThickness="0,1,0,0"
-                                        CornerRadius="0,0,8,8">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBox x:Name="ComposeBox"
-                                                 Watermark="輸入文字，按 Enter 新增段落… 拖曳圖片至此插入"
-                                                 AcceptsReturn="False"
-                                                 TextWrapping="Wrap"
-                                                 MinHeight="32"
-                                                 CornerRadius="6"
-                                                 KeyDown="OnComposeKeyDown"
-                                                 FontSize="14" />
-                                        <Button Grid.Column="1" Content="插入"
-                                                Click="OnComposeInsert"
-                                                Margin="6,0,0,0"
-                                                VerticalAlignment="Center"
-                                                Padding="12,6"
-                                                CornerRadius="6"
-                                                Background="#0066CC"
-                                                Foreground="White" />
-                                    </Grid>
-                                </Border>
-                            </Grid>
+                        <Border Background="White" CornerRadius="0,0,8,8"
+                                BorderBrush="#e4e4e7" BorderThickness="1,0,1,1">
+                            <ctrl:BlockEditor x:Name="VisualEditor" />
                         </Border>
                     </TabItem>
 

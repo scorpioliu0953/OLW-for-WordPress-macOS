@@ -3,14 +3,14 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using OLWforWordPress.Controls;
 using OLWforWordPress.ViewModels;
 
 namespace OLWforWordPress.Views;
 
 public partial class MainWindow : Window
 {
-    private DispatcherTimer? _previewTimer;
-    private string _lastPreviewContent = string.Empty;
+    private bool _syncingToEditor;
 
     public MainWindow()
     {
@@ -18,41 +18,50 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
     }
 
-    /// <summary>
-    /// In visual tab (0): toolbar inserts formatted HTML and refreshes preview.
-    /// In HTML tab (1): toolbar works on ContentEditor TextBox selection.
-    /// </summary>
     private bool IsVisualTab => EditorTabs?.SelectedIndex == 0;
 
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
-        // Drag & drop on both tabs
-        EditorDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
-        EditorDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
-        HtmlDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
-        HtmlDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
+        // HTML tab drag & drop
+        HtmlDropZone.AddHandler(DragDrop.DragOverEvent, OnHtmlDragOver, RoutingStrategies.Tunnel);
+        HtmlDropZone.AddHandler(DragDrop.DropEvent, OnHtmlDrop, RoutingStrategies.Tunnel);
 
         if (DataContext is MainWindowViewModel vm)
         {
-            PreviewPanel.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
+            // Wire up block editor
+            VisualEditor.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
+            VisualEditor.ContentChanged += OnBlockEditorContentChanged;
+            VisualEditor.ImagesDroppedAtPosition += OnImagesDroppedAtPosition;
+
             await vm.LoadDataAsync();
+            LoadVisualEditor();
         }
 
-        // Live preview auto-refresh
-        _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
-        _previewTimer.Tick += (_, _) =>
-        {
-            if (DataContext is MainWindowViewModel v && v.HtmlContent != _lastPreviewContent)
-            {
-                _lastPreviewContent = v.HtmlContent;
-                RefreshPreview();
-            }
-        };
-        _previewTimer.Start();
-
-        // Default to visual edit tab
         EditorTabs.SelectedIndex = 0;
-        RefreshPreview();
+    }
+
+    // ── Block editor ↔ ViewModel sync ──
+
+    private void OnBlockEditorContentChanged(string html)
+    {
+        if (_syncingToEditor) return;
+        if (DataContext is MainWindowViewModel vm)
+        {
+            _syncingToEditor = true;
+            vm.HtmlContent = html;
+            _syncingToEditor = false;
+        }
+    }
+
+    private void LoadVisualEditor()
+    {
+        if (DataContext is MainWindowViewModel vm)
+        {
+            _syncingToEditor = true;
+            VisualEditor.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
+            VisualEditor.LoadHtml(vm.HtmlContent);
+            _syncingToEditor = false;
+        }
     }
 
     // ── Tab switching ──
@@ -61,51 +70,16 @@ public partial class MainWindow : Window
     {
         if (EditorTabs == null) return;
         if (EditorTabs.SelectedIndex == 0)
-            RefreshPreview();
-    }
-
-    private void RefreshPreview()
-    {
-        if (DataContext is MainWindowViewModel vm)
         {
-            PreviewPanel.SetLocalImageResolver(id => vm.GetPendingImageBytes(id));
-            PreviewPanel.RenderHtml(vm.HtmlContent);
+            // Switching to visual → reload from HTML
+            LoadVisualEditor();
         }
-    }
-
-    // ── Compose bar (visual tab) ──
-
-    private void OnComposeKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter)
+        else
         {
-            InsertComposedText();
-            e.Handled = true;
+            // Switching to HTML → sync from block editor
+            if (DataContext is MainWindowViewModel vm)
+                vm.HtmlContent = VisualEditor.ToHtml();
         }
-    }
-
-    private void OnComposeInsert(object? sender, RoutedEventArgs e)
-    {
-        InsertComposedText();
-    }
-
-    private void InsertComposedText()
-    {
-        var text = ComposeBox.Text?.Trim();
-        if (string.IsNullOrEmpty(text)) return;
-
-        if (DataContext is MainWindowViewModel vm)
-        {
-            vm.HtmlContent = (vm.HtmlContent ?? "").TrimEnd() + $"\n<p>{EscapeHtml(text)}</p>\n";
-            ComposeBox.Text = string.Empty;
-            _lastPreviewContent = vm.HtmlContent;
-            RefreshPreview();
-        }
-    }
-
-    private static string EscapeHtml(string text)
-    {
-        return text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
     }
 
     // ── Post Actions ──
@@ -115,19 +89,24 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm)
         {
             vm.NewPost();
-            _lastPreviewContent = string.Empty;
-            RefreshPreview();
+            LoadVisualEditor();
         }
     }
 
     private async void OnPublishClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm) await vm.PublishAsync();
+        if (DataContext is MainWindowViewModel vm)
+        {
+            // Sync visual editor to ViewModel before publishing
+            if (IsVisualTab)
+                vm.HtmlContent = VisualEditor.ToHtml();
+            await vm.PublishAsync();
+        }
     }
 
     // ── Formatting Toolbar ──
-    // Visual tab: insert formatted block into HtmlContent + refresh preview.
-    // HTML tab: wrap selection in ContentEditor TextBox.
+    // Visual tab: operates on block editor focused block
+    // HTML tab: operates on ContentEditor TextBox
 
     private void OnBoldClick(object? s, RoutedEventArgs e) => ApplyFormat("<strong>", "</strong>");
     private void OnItalicClick(object? s, RoutedEventArgs e) => ApplyFormat("<em>", "</em>");
@@ -135,15 +114,18 @@ public partial class MainWindow : Window
     private void OnStrikeClick(object? s, RoutedEventArgs e) => ApplyFormat("<s>", "</s>");
     private void OnCodeClick(object? s, RoutedEventArgs e) => ApplyFormat("<code>", "</code>");
 
-    private void OnH2Click(object? s, RoutedEventArgs e) => ApplyBlockFormat("<h2>", "</h2>");
-    private void OnH3Click(object? s, RoutedEventArgs e) => ApplyBlockFormat("<h3>", "</h3>");
-    private void OnH4Click(object? s, RoutedEventArgs e) => ApplyBlockFormat("<h4>", "</h4>");
-    private void OnBlockquoteClick(object? s, RoutedEventArgs e) => ApplyBlockFormat("<blockquote>", "</blockquote>");
+    private void OnH2Click(object? s, RoutedEventArgs e) => ChangeBlockType("h2");
+    private void OnH3Click(object? s, RoutedEventArgs e) => ChangeBlockType("h3");
+    private void OnH4Click(object? s, RoutedEventArgs e) => ChangeBlockType("h4");
+    private void OnBlockquoteClick(object? s, RoutedEventArgs e) => ChangeBlockType("blockquote");
 
     private void OnHrClick(object? s, RoutedEventArgs e)
     {
         if (IsVisualTab)
-            AppendToContent("\n<hr />\n");
+        {
+            var idx = VisualEditor.FocusedBlockIndex;
+            VisualEditor.InsertHtmlBlock("hr", "", idx >= 0 ? idx + 1 : -1);
+        }
         else
             InsertAtCursor("\n<hr />\n");
     }
@@ -151,48 +133,19 @@ public partial class MainWindow : Window
     private void OnReadMoreClick(object? s, RoutedEventArgs e)
     {
         if (IsVisualTab)
-            AppendToContent("\n<!--more-->\n");
+        {
+            var idx = VisualEditor.FocusedBlockIndex;
+            VisualEditor.InsertHtmlBlock("more", "", idx >= 0 ? idx + 1 : -1);
+        }
         else
             InsertAtCursor("\n<!--more-->\n");
     }
 
-    /// <summary>
-    /// Inline formatting: in visual tab wraps compose box selection;
-    /// in HTML tab wraps ContentEditor selection.
-    /// </summary>
     private void ApplyFormat(string openTag, string closeTag)
     {
         if (IsVisualTab)
         {
-            // Wrap selected text in compose box
-            var tb = ComposeBox;
-            var start = tb.SelectionStart;
-            var end = tb.SelectionEnd;
-            var text = tb.Text ?? "";
-            var length = end - start;
-
-            if (length > 0)
-            {
-                var selected = text.Substring(start, length);
-                var replacement = openTag + selected + closeTag;
-                tb.Text = text.Remove(start, length).Insert(start, replacement);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    tb.SelectionStart = start + replacement.Length;
-                    tb.SelectionEnd = tb.SelectionStart;
-                });
-            }
-            else
-            {
-                var insertion = openTag + closeTag;
-                tb.Text = (text ?? "").Insert(start, insertion);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    tb.SelectionStart = start + openTag.Length;
-                    tb.SelectionEnd = tb.SelectionStart;
-                });
-            }
-            tb.Focus();
+            VisualEditor.ApplyInlineFormat(openTag, closeTag);
         }
         else
         {
@@ -200,54 +153,33 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Block formatting: in visual tab wraps compose text as a block and inserts;
-    /// in HTML tab wraps ContentEditor selection.
-    /// </summary>
-    private void ApplyBlockFormat(string openTag, string closeTag)
+    private void ChangeBlockType(string newTag)
     {
         if (IsVisualTab)
         {
-            var text = ComposeBox.Text?.Trim();
-            if (!string.IsNullOrEmpty(text))
+            var currentType = VisualEditor.GetFocusedBlockType();
+            if (currentType == newTag)
             {
-                if (DataContext is MainWindowViewModel vm)
-                {
-                    vm.HtmlContent = (vm.HtmlContent ?? "").TrimEnd() + $"\n{openTag}{EscapeHtml(text)}{closeTag}\n";
-                    ComposeBox.Text = string.Empty;
-                    _lastPreviewContent = vm.HtmlContent;
-                    RefreshPreview();
-                }
+                // Toggle back to paragraph
+                VisualEditor.ChangeBlockType("p");
             }
             else
             {
-                // Insert empty block
-                AppendToContent($"\n{openTag}{closeTag}\n");
+                VisualEditor.ChangeBlockType(newTag);
             }
         }
         else
         {
-            WrapSelectionWith(openTag, closeTag);
+            // HTML tab: wrap selection
+            var tag = newTag;
+            WrapSelectionWith($"<{tag}>", $"</{tag}>");
         }
     }
 
     private void OnUlClick(object? s, RoutedEventArgs e)
     {
         if (IsVisualTab)
-        {
-            var text = ComposeBox.Text?.Trim();
-            if (!string.IsNullOrEmpty(text))
-            {
-                var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                var items = string.Join("\n", lines.Select(l => $"  <li>{EscapeHtml(l.Trim())}</li>"));
-                AppendToContent($"\n<ul>\n{items}\n</ul>\n");
-                ComposeBox.Text = string.Empty;
-            }
-            else
-            {
-                AppendToContent("<ul>\n  <li></li>\n</ul>");
-            }
-        }
+            VisualEditor.ChangeBlockType("ul");
         else
         {
             var sel = GetSelectedText();
@@ -258,29 +190,14 @@ public partial class MainWindow : Window
                 ReplaceSelection($"<ul>\n{items}\n</ul>");
             }
             else
-            {
                 InsertAtCursor("<ul>\n  <li></li>\n</ul>");
-            }
         }
     }
 
     private void OnOlClick(object? s, RoutedEventArgs e)
     {
         if (IsVisualTab)
-        {
-            var text = ComposeBox.Text?.Trim();
-            if (!string.IsNullOrEmpty(text))
-            {
-                var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                var items = string.Join("\n", lines.Select(l => $"  <li>{EscapeHtml(l.Trim())}</li>"));
-                AppendToContent($"\n<ol>\n{items}\n</ol>\n");
-                ComposeBox.Text = string.Empty;
-            }
-            else
-            {
-                AppendToContent("<ol>\n  <li></li>\n</ol>");
-            }
-        }
+            VisualEditor.ChangeBlockType("ol");
         else
         {
             var sel = GetSelectedText();
@@ -291,9 +208,7 @@ public partial class MainWindow : Window
                 ReplaceSelection($"<ol>\n{items}\n</ol>");
             }
             else
-            {
                 InsertAtCursor("<ol>\n  <li></li>\n</ol>");
-            }
         }
     }
 
@@ -333,10 +248,9 @@ public partial class MainWindow : Window
 
         if (IsVisualTab)
         {
-            var selStart = ComposeBox.SelectionStart;
-            var selEnd = ComposeBox.SelectionEnd;
-            if (selEnd > selStart)
-                dialog.DisplayText = (ComposeBox.Text ?? "").Substring(selStart, selEnd - selStart);
+            var tb = VisualEditor.GetFocusedTextBox();
+            if (tb != null && tb.SelectionEnd > tb.SelectionStart)
+                dialog.DisplayText = (tb.Text ?? "").Substring(tb.SelectionStart, tb.SelectionEnd - tb.SelectionStart);
         }
         else
         {
@@ -354,21 +268,17 @@ public partial class MainWindow : Window
 
         if (IsVisualTab)
         {
-            // Insert link into compose box or append to content
-            if (!string.IsNullOrEmpty(ComposeBox.Text))
+            // In visual mode, insert link text at cursor in focused block
+            var tb = VisualEditor.GetFocusedTextBox();
+            if (tb != null)
             {
-                var tb = ComposeBox;
                 var pos = tb.SelectionStart;
                 var len = tb.SelectionEnd - pos;
                 var text = tb.Text ?? "";
                 if (len > 0)
-                    tb.Text = text.Remove(pos, len).Insert(pos, tag);
+                    tb.Text = text.Remove(pos, len).Insert(pos, displayText);
                 else
-                    tb.Text = text.Insert(pos, tag);
-            }
-            else
-            {
-                AppendToContent($"\n<p>{tag}</p>\n");
+                    tb.Text = text.Insert(pos, displayText);
             }
         }
         else
@@ -400,12 +310,61 @@ public partial class MainWindow : Window
         });
 
         if (files.Count == 0) return;
-        await AddLocalImages(vm, files.ToList());
+
+        if (IsVisualTab)
+        {
+            var insertIdx = VisualEditor.FocusedBlockIndex;
+            await AddImagesToVisualEditor(vm, files.ToList(), insertIdx >= 0 ? insertIdx + 1 : -1);
+        }
+        else
+        {
+            await AddImagesToHtmlEditor(vm, files.ToList());
+        }
     }
 
-    // ── Drag & Drop ──
+    private async Task OnImagesDroppedAtPosition(IEnumerable<IStorageItem> items, int insertIndex)
+    {
+        if (DataContext is not MainWindowViewModel vm) return;
 
-    private void OnDragOver(object? sender, DragEventArgs e)
+        var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
+
+        var imageFiles = new List<IStorageFile>();
+        foreach (var item in items)
+        {
+            if (item is IStorageFile sf && imageExtensions.Contains(Path.GetExtension(sf.Name)))
+                imageFiles.Add(sf);
+        }
+
+        if (imageFiles.Count > 0)
+            await AddImagesToVisualEditor(vm, imageFiles, insertIndex);
+    }
+
+    private async Task AddImagesToVisualEditor(MainWindowViewModel vm, List<IStorageFile> files, int insertAt)
+    {
+        var offset = 0;
+        foreach (var file in files)
+        {
+            try
+            {
+                var bytes = await ReadFileBytes(file);
+                if (bytes.Length > 0)
+                {
+                    var imgTag = vm.AddLocalImage(bytes, file.Name);
+                    VisualEditor.InsertImageBlock(imgTag, insertAt >= 0 ? insertAt + offset : -1);
+                    offset++;
+                }
+            }
+            catch (Exception ex)
+            {
+                vm.StatusMessage = $"讀取 {file.Name} 失敗: {ex.Message}";
+            }
+        }
+    }
+
+    // ── HTML tab drag & drop ──
+
+    private void OnHtmlDragOver(object? sender, DragEventArgs e)
     {
         if (e.Data.Contains(DataFormats.Files))
         {
@@ -418,27 +377,42 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OnDrop(object? sender, DragEventArgs e)
+    private async void OnHtmlDrop(object? sender, DragEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm) return;
-
         var storageItems = e.Data.GetFiles()?.ToList();
         if (storageItems == null || storageItems.Count == 0) return;
-
         e.Handled = true;
 
         var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
+        var imageFiles = storageItems
+            .OfType<IStorageFile>()
+            .Where(sf => imageExtensions.Contains(Path.GetExtension(sf.Name)))
+            .ToList();
 
-        var imageFiles = new List<IStorageFile>();
-        foreach (var item in storageItems)
+        if (imageFiles.Count > 0)
+            await AddImagesToHtmlEditor(vm, imageFiles);
+    }
+
+    private async Task AddImagesToHtmlEditor(MainWindowViewModel vm, List<IStorageFile> files)
+    {
+        var imgTags = new List<string>();
+        foreach (var file in files)
         {
-            if (item is IStorageFile sf && imageExtensions.Contains(Path.GetExtension(sf.Name)))
-                imageFiles.Add(sf);
+            try
+            {
+                var bytes = await ReadFileBytes(file);
+                if (bytes.Length > 0)
+                    imgTags.Add(vm.AddLocalImage(bytes, file.Name));
+            }
+            catch (Exception ex)
+            {
+                vm.StatusMessage = $"讀取 {file.Name} 失敗: {ex.Message}";
+            }
         }
-
-        if (imageFiles.Count == 0) return;
-        await AddLocalImages(vm, imageFiles);
+        if (imgTags.Count > 0)
+            InsertAtCursor("\n" + string.Join("\n\n", imgTags) + "\n");
     }
 
     // ── Sidebar ──
@@ -451,8 +425,7 @@ public partial class MainWindow : Window
 
         listBox.SelectedItem = null;
         await vm.OpenPostAsync(item.Post);
-        _lastPreviewContent = string.Empty;
-        RefreshPreview();
+        LoadVisualEditor();
     }
 
     private async void OnDeletePostClick(object? sender, RoutedEventArgs e)
@@ -460,67 +433,10 @@ public partial class MainWindow : Window
         if (DataContext is not MainWindowViewModel vm) return;
         if (!vm.IsEditing) return;
         await vm.DeleteCurrentPostAsync();
+        LoadVisualEditor();
     }
 
-    // ── Helpers ──
-
-    /// <summary>Append HTML to the end of HtmlContent and refresh preview.</summary>
-    private void AppendToContent(string html)
-    {
-        if (DataContext is MainWindowViewModel vm)
-        {
-            vm.HtmlContent = (vm.HtmlContent ?? "").TrimEnd() + html;
-            _lastPreviewContent = vm.HtmlContent;
-            RefreshPreview();
-        }
-    }
-
-    /// <summary>Add local images - works from both tabs.</summary>
-    private async Task AddLocalImages(MainWindowViewModel vm, List<IStorageFile> files)
-    {
-        var imgTags = new List<string>();
-
-        foreach (var file in files)
-        {
-            try
-            {
-                byte[] bytes;
-                var localPath = file.TryGetLocalPath();
-                if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
-                {
-                    bytes = await File.ReadAllBytesAsync(localPath);
-                }
-                else
-                {
-                    await using var stream = await file.OpenReadAsync();
-                    using var ms = new MemoryStream();
-                    await stream.CopyToAsync(ms);
-                    bytes = ms.ToArray();
-                }
-
-                if (bytes.Length > 0)
-                {
-                    var tag = vm.AddLocalImage(bytes, file.Name);
-                    imgTags.Add(tag);
-                }
-            }
-            catch (Exception ex)
-            {
-                vm.StatusMessage = $"讀取 {file.Name} 失敗: {ex.Message}";
-            }
-        }
-
-        if (imgTags.Count > 0)
-        {
-            var html = "\n" + string.Join("\n\n", imgTags) + "\n";
-            if (IsVisualTab)
-                AppendToContent(html);
-            else
-                InsertAtCursor(html);
-        }
-    }
-
-    // ── HTML tab TextBox helpers (for ContentEditor) ──
+    // ── HTML tab TextBox helpers ──
 
     private int GetSelectionLength() => ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
 
@@ -561,8 +477,6 @@ public partial class MainWindow : Window
                 tb.SelectionEnd = tb.SelectionStart;
             });
         }
-
-        SyncHtmlEditorToViewModel();
         tb.Focus();
     }
 
@@ -577,7 +491,6 @@ public partial class MainWindow : Window
             tb.SelectionStart = pos + content.Length;
             tb.SelectionEnd = tb.SelectionStart;
         });
-        SyncHtmlEditorToViewModel();
         tb.Focus();
     }
 
@@ -593,14 +506,19 @@ public partial class MainWindow : Window
             tb.SelectionStart = start + content.Length;
             tb.SelectionEnd = tb.SelectionStart;
         });
-        SyncHtmlEditorToViewModel();
         tb.Focus();
     }
 
-    private void SyncHtmlEditorToViewModel()
+    private static async Task<byte[]> ReadFileBytes(IStorageFile file)
     {
-        if (DataContext is MainWindowViewModel vm)
-            vm.HtmlContent = ContentEditor.Text ?? string.Empty;
+        var localPath = file.TryGetLocalPath();
+        if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
+            return await File.ReadAllBytesAsync(localPath);
+
+        await using var stream = await file.OpenReadAsync();
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
     }
 }
 
