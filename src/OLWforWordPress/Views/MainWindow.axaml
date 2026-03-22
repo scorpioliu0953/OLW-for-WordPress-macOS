@@ -142,7 +142,7 @@
                     </WrapPanel>
                 </Border>
 
-                <!-- Tab: Preview / HTML Editor -->
+                <!-- Tab: Visual Edit / HTML Source -->
                 <TabControl Grid.Row="2" x:Name="EditorTabs" SelectionChanged="OnEditorTabChanged">
                     <TabControl.Styles>
                         <Style Selector="TabItem">
@@ -151,23 +151,56 @@
                         </Style>
                     </TabControl.Styles>
 
-                    <!-- Visual Preview Tab -->
-                    <TabItem Header="視覺預覽">
-                        <Border Background="White" CornerRadius="0,0,8,8"
-                                BorderBrush="#e4e4e7" BorderThickness="1,0,1,1">
-                            <ctrl:HtmlPreviewPanel x:Name="PreviewPanel" />
+                    <!-- Visual Edit Tab (default) -->
+                    <TabItem Header="視覺編輯">
+                        <Border x:Name="EditorDropZone"
+                                Background="White" CornerRadius="0,0,8,8"
+                                BorderBrush="#e4e4e7" BorderThickness="1,0,1,1"
+                                DragDrop.AllowDrop="True">
+                            <Grid RowDefinitions="2*,Auto,3*,Auto">
+                                <!-- Editor -->
+                                <TextBox Grid.Row="0"
+                                         x:Name="ContentEditor"
+                                         Text="{Binding HtmlContent}"
+                                         Watermark="在此輸入文章內容（支援 HTML）..."
+                                         AcceptsReturn="True"
+                                         AcceptsTab="True"
+                                         TextWrapping="Wrap"
+                                         Classes="editor-input"
+                                         BorderThickness="0" />
+
+                                <!-- Preview divider -->
+                                <Border Grid.Row="1" Background="#f5f5f5" Padding="8,3"
+                                        BorderBrush="#e4e4e7" BorderThickness="0,1">
+                                    <TextBlock Text="▼ 即時預覽" FontSize="11" Foreground="#999" />
+                                </Border>
+
+                                <!-- Live Preview -->
+                                <Border Grid.Row="2" Background="White">
+                                    <ctrl:HtmlPreviewPanel x:Name="PreviewPanel" />
+                                </Border>
+
+                                <!-- Drop hint -->
+                                <Border Grid.Row="3" Padding="10,6" Background="#fafafa"
+                                        BorderBrush="#f0f0f0" BorderThickness="0,1,0,0"
+                                        CornerRadius="0,0,8,8">
+                                    <TextBlock Text="拖曳圖片至此插入，發布時自動上傳"
+                                               FontSize="11" Foreground="#aaa"
+                                               HorizontalAlignment="Center" />
+                                </Border>
+                            </Grid>
                         </Border>
                     </TabItem>
 
                     <!-- HTML Source Tab -->
                     <TabItem Header="HTML 原始碼">
-                        <Border x:Name="EditorDropZone"
+                        <Border x:Name="HtmlDropZone"
                                 Background="White" CornerRadius="0,0,8,8"
                                 BorderBrush="#e4e4e7" BorderThickness="1,0,1,1"
                                 DragDrop.AllowDrop="True">
                             <Grid RowDefinitions="*,Auto">
                                 <TextBox Grid.Row="0"
-                                         x:Name="ContentEditor"
+                                         x:Name="HtmlOnlyEditor"
                                          Text="{Binding HtmlContent}"
                                          Watermark="在此輸入文章內容（支援 HTML）..."
                                          AcceptsReturn="True"
@@ -179,7 +212,7 @@
                                 <Border Grid.Row="1" Padding="10,6" Background="#fafafa"
                                         BorderBrush="#f0f0f0" BorderThickness="0,1,0,0"
                                         CornerRadius="0,0,8,8">
-                                    <TextBlock Text="拖曳圖片至此插入，發布時自動上傳"
+                                    <TextBlock Text="直接編輯 HTML 原始碼"
                                                FontSize="11" Foreground="#aaa"
                                                HorizontalAlignment="Center" />
                                 </Border>

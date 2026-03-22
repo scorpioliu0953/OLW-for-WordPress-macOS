@@ -9,16 +9,26 @@ namespace OLWforWordPress.Views;
 
 public partial class MainWindow : Window
 {
+    private DispatcherTimer? _previewTimer;
+    private string _lastPreviewContent = string.Empty;
+
     public MainWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
     }
 
+    /// <summary>Returns the TextBox in the currently active tab.</summary>
+    private TextBox ActiveEditor =>
+        EditorTabs?.SelectedIndex == 1 ? HtmlOnlyEditor : ContentEditor;
+
     private async void OnLoaded(object? sender, RoutedEventArgs e)
     {
+        // Drag & drop on both tabs
         EditorDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
         EditorDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
+        HtmlDropZone.AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Tunnel);
+        HtmlDropZone.AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Tunnel);
 
         // Setup preview panel image resolver
         if (DataContext is MainWindowViewModel vm)
@@ -27,8 +37,21 @@ public partial class MainWindow : Window
             await vm.LoadDataAsync();
         }
 
-        // Default to HTML tab for editing
-        EditorTabs.SelectedIndex = 1;
+        // Live preview refresh timer (polls every 800ms)
+        _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+        _previewTimer.Tick += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel v && v.HtmlContent != _lastPreviewContent)
+            {
+                _lastPreviewContent = v.HtmlContent;
+                RefreshPreview();
+            }
+        };
+        _previewTimer.Start();
+
+        // Default to visual edit tab
+        EditorTabs.SelectedIndex = 0;
+        RefreshPreview();
     }
 
     // ── Tab switching ──
@@ -36,7 +59,7 @@ public partial class MainWindow : Window
     private void OnEditorTabChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (EditorTabs == null) return;
-        if (EditorTabs.SelectedIndex == 0) // Preview tab
+        if (EditorTabs.SelectedIndex == 0) // Visual edit tab
         {
             RefreshPreview();
         }
@@ -55,7 +78,12 @@ public partial class MainWindow : Window
 
     private void OnNewPostClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel vm) vm.NewPost();
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.NewPost();
+            _lastPreviewContent = string.Empty;
+            RefreshPreview();
+        }
     }
 
     private async void OnPublishClick(object? sender, RoutedEventArgs e)
@@ -113,10 +141,7 @@ public partial class MainWindow : Window
         var item = FontSizeCombo.SelectedItem as ComboBoxItem;
         var size = item?.Tag?.ToString();
         if (size != null)
-        {
-            SwitchToHtmlTab();
             WrapSelectionWith($"<span style=\"font-size:{size}px\">", "</span>");
-        }
         FontSizeCombo.SelectedIndex = 0;
     }
 
@@ -126,10 +151,7 @@ public partial class MainWindow : Window
         var item = TextColorCombo.SelectedItem as ComboBoxItem;
         var color = item?.Tag?.ToString();
         if (color != null)
-        {
-            SwitchToHtmlTab();
             WrapSelectionWith($"<span style=\"color:{color}\">", "</span>");
-        }
         TextColorCombo.SelectedIndex = 0;
     }
 
@@ -139,28 +161,25 @@ public partial class MainWindow : Window
         var item = BgColorCombo.SelectedItem as ComboBoxItem;
         var color = item?.Tag?.ToString();
         if (color != null)
-        {
-            SwitchToHtmlTab();
             WrapSelectionWith($"<span style=\"background-color:{color}\">", "</span>");
-        }
         BgColorCombo.SelectedIndex = 0;
     }
 
     private async void OnLinkClick(object? sender, RoutedEventArgs e)
     {
+        var tb = ActiveEditor;
         var dialog = new LinkDialog();
-        var selStart = ContentEditor.SelectionStart;
-        var selEnd = ContentEditor.SelectionEnd;
+        var selStart = tb.SelectionStart;
+        var selEnd = tb.SelectionEnd;
         if (selEnd > selStart)
         {
-            var curText = ContentEditor.Text ?? string.Empty;
+            var curText = tb.Text ?? string.Empty;
             dialog.DisplayText = curText.Substring(selStart, selEnd - selStart);
         }
 
         var result = await dialog.ShowDialog<LinkDialogResult?>(this);
         if (result != null)
         {
-            SwitchToHtmlTab();
             var displayText = string.IsNullOrWhiteSpace(result.Text) ? result.Url : result.Text;
             var tag = $"<a href=\"{result.Url}\">{displayText}</a>";
 
@@ -191,7 +210,6 @@ public partial class MainWindow : Window
         });
 
         if (files.Count == 0) return;
-        SwitchToHtmlTab();
         await AddLocalImages(vm, files.ToList());
     }
 
@@ -243,6 +261,8 @@ public partial class MainWindow : Window
 
         listBox.SelectedItem = null;
         await vm.OpenPostAsync(item.Post);
+        _lastPreviewContent = string.Empty;
+        RefreshPreview();
     }
 
     private async void OnDeletePostClick(object? sender, RoutedEventArgs e)
@@ -254,19 +274,15 @@ public partial class MainWindow : Window
 
     // ── Helpers ──
 
-    private void SwitchToHtmlTab()
-    {
-        EditorTabs.SelectedIndex = 1;
-    }
-
-    private int GetSelectionLength() => ContentEditor.SelectionEnd - ContentEditor.SelectionStart;
+    private int GetSelectionLength() => ActiveEditor.SelectionEnd - ActiveEditor.SelectionStart;
 
     private string GetSelectedText()
     {
-        var start = ContentEditor.SelectionStart;
-        var end = ContentEditor.SelectionEnd;
+        var tb = ActiveEditor;
+        var start = tb.SelectionStart;
+        var end = tb.SelectionEnd;
         if (end <= start) return "";
-        return (ContentEditor.Text ?? "").Substring(start, end - start);
+        return (tb.Text ?? "").Substring(start, end - start);
     }
 
     private async Task AddLocalImages(MainWindowViewModel vm, List<IStorageFile> files)
@@ -309,8 +325,7 @@ public partial class MainWindow : Window
 
     private void WrapSelectionWith(string openTag, string closeTag)
     {
-        SwitchToHtmlTab();
-        var tb = ContentEditor;
+        var tb = ActiveEditor;
         var start = tb.SelectionStart;
         var end = tb.SelectionEnd;
         var length = end - start;
@@ -344,8 +359,7 @@ public partial class MainWindow : Window
 
     private void InsertAtCursor(string content)
     {
-        SwitchToHtmlTab();
-        var tb = ContentEditor;
+        var tb = ActiveEditor;
         var pos = tb.SelectionStart;
         var text = tb.Text ?? string.Empty;
         tb.Text = text.Insert(pos, content);
@@ -360,8 +374,7 @@ public partial class MainWindow : Window
 
     private void ReplaceSelection(string content)
     {
-        SwitchToHtmlTab();
-        var tb = ContentEditor;
+        var tb = ActiveEditor;
         var start = tb.SelectionStart;
         var length = tb.SelectionEnd - start;
         var text = tb.Text ?? string.Empty;
@@ -378,7 +391,7 @@ public partial class MainWindow : Window
     private void SyncContentToViewModel()
     {
         if (DataContext is MainWindowViewModel vm)
-            vm.HtmlContent = ContentEditor.Text ?? string.Empty;
+            vm.HtmlContent = ActiveEditor.Text ?? string.Empty;
     }
 }
 
